@@ -6,6 +6,7 @@
 
 #include "bitboard.h"
 #include "board.h"
+#include "brain.h"
 #include "movegen.h"
 
 int perft(Board *board, int depth, MoveGen *moveGen) {
@@ -13,7 +14,7 @@ int perft(Board *board, int depth, MoveGen *moveGen) {
 	if(depth == 0) {
 		return 1;
 	}
-	Move moves[MAX_PLIES];
+	Move moves[MAX_MOVES];
 	Move *movesCurrent = moves;
 	Move *movesEnd = moveGen->legalMovesFast(board, movesCurrent);
 	while(movesCurrent != movesEnd) {
@@ -48,6 +49,7 @@ int difftime() {
 
 int main() {
 	Board board = Board();
+	Brain brain = Brain();
 	MoveGen moveGen = MoveGen();
 	std::string line, token;
 
@@ -83,7 +85,26 @@ int main() {
 			difftime();
 			std::cout << perft(&board, depth, &moveGen) << " " << difftime() << std::endl;
 		} else if(token == "go") {
-			std::cout << "Not implemented - go!!\n";
+			Move move = brain.getMove(&board);
+			int source = move & 63;
+			int destination = (move >> 6) & 63;
+			char sourceFile = (source % 8) + 'a';
+			char sourceRank = (source / 8) + '1';
+			char destinationFile = (destination % 8) + 'a';
+			char destinationRank = (destination / 8) + '1';
+			char promotionPiece = '\0';
+			if(move & MOVE_PROMOTION) {
+				// Don't check the knight promotion because it's 0.
+				promotionPiece = 'n';
+				if(move & MOVE_PROMOTE_TO_BISHOP) {
+					promotionPiece = 'b';
+				} else if(move & MOVE_PROMOTE_TO_ROOK) {
+					promotionPiece = 'r';
+				} else if(move & MOVE_PROMOTE_TO_QUEEN) {
+					promotionPiece = 'q';
+				}
+			}
+			std::cout << "bestmove " << sourceFile << sourceRank << destinationFile << destinationRank << promotionPiece << std::endl;
 		} else if(token == "quit") {
 			return 0;
 		}

@@ -1,6 +1,7 @@
 #ifndef SRC_TYPES_H_
 #define SRC_TYPES_H_
 
+#define MAX_MOVES 200
 #define MAX_PLIES 2000
 
 typedef unsigned long long U64;
