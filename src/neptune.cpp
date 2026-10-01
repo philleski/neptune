@@ -229,7 +229,7 @@ int main() {
 			}
 			std::cout << (ok ? "ok" : "fail") << std::endl;
 		} else if(token == "go") {
-			int depth = 6;
+			int depth = 8;
 			while(ss >> token) {
 				if(token == "depth") {
 					ss >> depth;
