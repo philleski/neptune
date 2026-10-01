@@ -1,22 +1,9 @@
-#include <stdio.h>
+#include <cstring>
 
 #include "bitboard.h"
 #include "board.h"
 #include "movegen.h"
 #include "types.h"
-
-const char *printMove(Move move) {
-	int squareSource = SOURCE(move);
-	int squareDest = DEST(move);
-	static char result[6];
-	result[0] = FILE(squareSource);
-	result[1] = RANK(squareSource);
-	result[2] = '-';
-	result[3] = FILE(squareDest);
-	result[4] = RANK(squareDest);
-	result[5] = '\0';
-	return result;
-}
 
 MoveGen::MoveGen() {
 	initAttackSquaresPawn(WHITE);
@@ -45,10 +32,8 @@ void MoveGen::initAttackSquaresPawn(Color color) {
 	for(int square = A1; square <= H8; square++) {
 		attackSquaresPawnMove[color][square] = BB_EMPTY;
 		attackSquaresPawnCapture[color][square] = BB_EMPTY;
-		if(color == WHITE && square < A2) {
-			continue;
-		}
-		if(color == BLACK && square > H7) {
+		// A pawn promotes before it can stand on the first or eighth rank.
+		if(square < A2 || square > H7) {
 			continue;
 		}
 		attackSquaresPawnMove[color][square] |=
@@ -196,7 +181,7 @@ Move *MoveGen::appendMovesForCastling(Board *board, Move *moves) {
 	return moves;
 }
 
-Move *MoveGen::legalMovesFast(Board *board, Move *moves, bool capturesOnly) {
+Move *MoveGen::generateMoves(Board *board, Move *moves, bool capturesOnly) {
 	Move *movesCurrent = moves;
 	movesCurrent = appendMovesForPawn(board, movesCurrent, capturesOnly);
 	movesCurrent = appendMovesForShortRangePiece(

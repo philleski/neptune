@@ -81,7 +81,7 @@ void Brain::orderMoves(Move *moves, int count, Board *board, int depth, Move ttM
 
 int Brain::collectLegal(Board *board, Move *moves, bool capturesOnly, int depth, Move ttMove) {
 	Move pseudo[MAX_MOVES];
-	Move *end = moveGen.legalMovesFast(board, pseudo, capturesOnly);
+	Move *end = moveGen.generateMoves(board, pseudo, capturesOnly);
 	int count = 0;
 	for(Move *current = pseudo; current != end; current++) {
 		if(moveGen.isLegal(board, *current)) {
@@ -94,7 +94,7 @@ int Brain::collectLegal(Board *board, Move *moves, bool capturesOnly, int depth,
 
 bool Brain::moveIsLegal(Board *board, Move move) {
 	Move pseudo[MAX_MOVES];
-	Move *end = moveGen.legalMovesFast(board, pseudo, false);
+	Move *end = moveGen.generateMoves(board, pseudo, false);
 	for(Move *current = pseudo; current != end; current++) {
 		if(*current == move && moveGen.isLegal(board, move)) {
 			return true;
@@ -104,6 +104,7 @@ bool Brain::moveIsLegal(Board *board, Move move) {
 }
 
 float Brain::quiescentSearch(Board *board, float alpha, float beta, int target) {
+	// Missing king: loss, with a ply penalty so shorter mates score better.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
 		return -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
 	}
@@ -118,6 +119,8 @@ float Brain::quiescentSearch(Board *board, float alpha, float beta, int target) 
 	int count = collectLegal(board, moves, true, 0, MOVE_NONE);
 	for(int i = 0; i < count; i++) {
 		int destination = DEST(moves[i]);
+		// Recaptures only, and only on the square of the capture just made.
+		// target == -1 accepts any capture.
 		if(target != -1 && destination != target) {
 			continue;
 		}
@@ -135,6 +138,7 @@ float Brain::quiescentSearch(Board *board, float alpha, float beta, int target) 
 }
 
 float Brain::alphabeta(Board *board, int depth, float alpha, float beta) {
+	// Missing king: loss, with a ply penalty so shorter mates score better.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
 		return -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
 	}
@@ -163,6 +167,7 @@ float Brain::alphabeta(Board *board, int depth, float alpha, float beta) {
 	int count = collectLegal(board, moves, false, depth, tableMove);
 	if(count == 0) {
 		if(moveGen.inCheck(board)) {
+			// Checkmate. The ply penalty prefers the shorter mate.
 			return -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
 		}
 		return 0;

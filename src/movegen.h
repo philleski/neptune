@@ -5,12 +5,11 @@
 #include "slidingattack.h"
 #include "types.h"
 
-const char *printMove(Move move);
-
 class MoveGen {
 public:
 	MoveGen();
-	Move *legalMovesFast(Board *board, Move *moves, bool capturesOnly = false);
+	// Pseudo-legal moves. isLegal rejects moves that leave the king in check.
+	Move *generateMoves(Board *board, Move *moves, bool capturesOnly = false);
 	bool isLegal(Board *board, Move move);
 	bool inCheck(Board *board);
 private:

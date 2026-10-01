@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include <cctype>
 #include <sstream>
 
 #include "bitboard.h"
@@ -39,6 +39,7 @@ Board::Board() {
 
 	updateSummaryBitboards();
 
+	castleRights = 0;
 	setCastleRight(WHITE_KINGSIDE);
 	setCastleRight(WHITE_QUEENSIDE);
 	setCastleRight(BLACK_KINGSIDE);
@@ -48,59 +49,6 @@ Board::Board() {
 	turn = WHITE;
 	ply = 0;
 	recomputeHash();
-}
-
-void Board::print() {
-	for(int rank = RANK_8; rank >= RANK_1; rank--) {
-		for(int file = FILE_A; file <= FILE_H; file++) {
-			Bitboard occupancy = BB_SET[SQ(rank, file)];
-			if(bitboards[WHITE_PAWN] & occupancy) {
-				printf("P");
-			} else if(bitboards[BLACK_PAWN] & occupancy) {
-				printf("p");
-			} else if(bitboards[WHITE_KNIGHT] & occupancy) {
-				printf("N");
-			} else if(bitboards[BLACK_KNIGHT] & occupancy) {
-				printf("n");
-			} else if(bitboards[WHITE_BISHOP] & occupancy) {
-				printf("B");
-			} else if(bitboards[BLACK_BISHOP] & occupancy) {
-				printf("b");
-			} else if(bitboards[WHITE_ROOK] & occupancy) {
-				printf("R");
-			} else if(bitboards[BLACK_ROOK] & occupancy) {
-				printf("r");
-			} else if(bitboards[WHITE_QUEEN] & occupancy) {
-				printf("Q");
-			} else if(bitboards[BLACK_QUEEN] & occupancy) {
-				printf("q");
-			} else if(bitboards[WHITE_KING] & occupancy) {
-				printf("K");
-			} else if(bitboards[BLACK_KING] & occupancy) {
-				printf("k");
-			} else {
-				printf("-");
-			}
-		}
-		printf("\n");
-	}
-	std::string castle = "";
-	if(hasCastleRight(WHITE_KINGSIDE)) {
-		castle += "K";
-	}
-	if(hasCastleRight(WHITE_QUEENSIDE)) {
-		castle += "Q";
-	}
-	if(hasCastleRight(BLACK_KINGSIDE)) {
-		castle += "k";
-	}
-	if(hasCastleRight(BLACK_QUEENSIDE)) {
-		castle += "q";
-	}
-	if(castle.empty()) {
-		castle = "-";
-	}
-	printf("Castle: %s\n", castle.c_str());
 }
 
 void Board::updateSummaryBitboards() {
@@ -120,10 +68,7 @@ void Board::clear() {
 	ply = 0;
 	enPassantTarget = BB_EMPTY;
 	turn = WHITE;
-	clearCastleRight(WHITE_KINGSIDE);
-	clearCastleRight(WHITE_QUEENSIDE);
-	clearCastleRight(BLACK_KINGSIDE);
-	clearCastleRight(BLACK_QUEENSIDE);
+	castleRights = 0;
 	updateSummaryBitboards();
 }
 
@@ -389,17 +334,18 @@ void Board::unmovePromote(Move move) {
 	bitboards[PIECE(turn, PROMOTION_PIECE(move))] &= occDestClr;
 }
 
-void Board::move(Move move) {
+void Board::move(Move played) {
+	// Save the hash and rights. unmove restores them from this Undo entry.
 	undoHistory[ply].castleRights = castleRights;
 	undoHistory[ply].enPassantTarget = enPassantTarget;
 	undoHistory[ply].positionHash = positionHash;
 	undoHistory[ply].positionHashPawnsKings = positionHashPawnsKings;
 	xorEp();
 	xorCastle();
-	Bitboard occSource = BB_SET[SOURCE(move)];
-	Bitboard occDest = BB_SET[DEST(move)];
-	int source = SOURCE(move);
-	int destination = DEST(move);
+	Bitboard occSource = BB_SET[SOURCE(played)];
+	Bitboard occDest = BB_SET[DEST(played)];
+	int source = SOURCE(played);
+	int destination = DEST(played);
 	int pieceStartUs = turn == WHITE ? WHITE_PAWN : BLACK_PAWN;
 	int pieceEndUs = turn == WHITE ? WHITE_KING : BLACK_KING;
 	int turnFlipped = FLIP(turn);
@@ -420,13 +366,13 @@ void Board::move(Move move) {
 		playerBitboards[turn] |= occDest;
 		allPieces &= ~occSource;
 		allPieces |= occDest;
-		if(IS_ENPASSANT(move)) {
-			moveEnPassant(move);
+		if(IS_ENPASSANT(played)) {
+			moveEnPassant(played);
 		}
 		if((piece == WHITE_PAWN || piece == BLACK_PAWN) &&
 				(occSource << 16 == occDest || occSource >> 16 == occDest)) {
 			// Pawn moving forward two squares.
-			setEnPassantTarget(move);
+			setEnPassantTarget(played);
 		} else {
 			unsetEnPassantTarget();
 		}
@@ -448,13 +394,13 @@ void Board::move(Move move) {
 		}
 		if(piece == WHITE_KING || piece == BLACK_KING) {
 			removeCastleRights();
-			if(IS_CASTLING(move)) {
-				moveCastle(move);
+			if(IS_CASTLING(played)) {
+				moveCastle(played);
 			}
 		} else if(piece == WHITE_ROOK || piece == BLACK_ROOK) {
 			updateCastleRightsRookMove(occSource);
-		} else if(IS_PROMOTION(move)) {
-			movePromote(move);
+		} else if(IS_PROMOTION(played)) {
+			movePromote(played);
 		}
 		undoHistory[ply].movedPiece = (Piece) piece;
 		break;

@@ -1,6 +1,4 @@
 #include <iostream>
-#include <stdio.h>
-#include <time.h>
 #include <sstream>
 #include <sys/time.h>
 
@@ -16,7 +14,7 @@ int perft(Board *board, int depth, MoveGen *moveGen) {
 	}
 	Move moves[MAX_MOVES];
 	Move *movesCurrent = moves;
-	Move *movesEnd = moveGen->legalMovesFast(board, movesCurrent);
+	Move *movesEnd = moveGen->generateMoves(board, movesCurrent);
 	while(movesCurrent != movesEnd) {
 		if(!moveGen->isLegal(board, *movesCurrent)) {
 			movesCurrent++;
@@ -71,7 +69,7 @@ Move findUciMove(Board *board, MoveGen *moveGen, const std::string &text) {
 	}
 	char promotion = text.size() >= 5 ? text[4] : '\0';
 	Move moves[MAX_MOVES];
-	Move *end = moveGen->legalMovesFast(board, moves);
+	Move *end = moveGen->generateMoves(board, moves);
 	for(Move *current = moves; current != end; current++) {
 		if(SOURCE(*current) != source || DEST(*current) != destination) {
 			continue;
@@ -118,7 +116,7 @@ std::string readFen(std::istringstream *ss, std::string *token, bool *sawMoves) 
 
 unsigned long long millisecondsSinceEpoch = 0ULL;
 
-int difftime() {
+int elapsedMillis() {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	unsigned long long millisecondsSinceEpochNew =
@@ -137,16 +135,17 @@ int main() {
 
 	initBitboards();
 
-	while(1) {
-		std::getline(std::cin, line);
+	while(std::getline(std::cin, line)) {
 		std::istringstream ss(line);
-		ss >> std::skipws >> token;
+		if(!(ss >> token)) {
+			continue;
+		}
 		if(token == "uci") {
-			std::cout << "id name Neptune\n";
-			std::cout << "id author Phil Leszczynski\n";
-			std::cout << "uciok\n";
+			std::cout << "id name Neptune" << std::endl;
+			std::cout << "id author Phil Leszczynski" << std::endl;
+			std::cout << "uciok" << std::endl;
 		} else if(token == "isready") {
-			std::cout << "readyok\n";
+			std::cout << "readyok" << std::endl;
 		} else if(token == "ucinewgame") {
 			board = Board();
 			brain.clear();
@@ -179,8 +178,8 @@ int main() {
 				fen += token + " ";
 			}
 			board.setPosition(fen);
-			difftime();
-			std::cout << perft(&board, depth, &moveGen) << " " << difftime() << std::endl;
+			elapsedMillis();
+			std::cout << perft(&board, depth, &moveGen) << " " << elapsedMillis() << std::endl;
 		} else if(token == "_eval") {
 			std::string fen;
 			while(ss >> token) {
@@ -214,7 +213,7 @@ int main() {
 			U64 full = board.positionHash;
 			U64 pawns = board.positionHashPawnsKings;
 			Move moves[MAX_MOVES];
-			Move *end = moveGen.legalMovesFast(&board, moves);
+			Move *end = moveGen.generateMoves(&board, moves);
 			for(Move *current = moves; current != end; current++) {
 				if(!moveGen.isLegal(&board, *current)) {
 					continue;

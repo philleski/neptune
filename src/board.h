@@ -17,8 +17,7 @@ struct Undo {
 class Board {
 public:
 	Board();
-	void print();
-	void move(Move move);
+	void move(Move played);
 	void unmove(Move move);
 	void setPosition(std::string fen);
 	bool hasCastleRight(CastleRight castleRight);
@@ -30,7 +29,7 @@ public:
 	Bitboard allPieces;
 	Bitboard enPassantTarget;
 	Color turn;
-	// Bits 0-4 are used according to the enum CastleRight
+	// Bits 0-3 are used according to the enum CastleRight
 	unsigned int castleRights;
 	int ply;
 	U64 positionHash;

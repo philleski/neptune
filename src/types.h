@@ -23,12 +23,12 @@ const Move MOVE_PROMOTE_TO_KNIGHT = 0x0000;
 const Move MOVE_PROMOTE_TO_BISHOP = 0x1000;
 const Move MOVE_PROMOTE_TO_ROOK = 0x2000;
 const Move MOVE_PROMOTE_TO_QUEEN = 0x3000;
-#define IS_PROMOTION(move) ((move & 0xc000) == 0x4000)
-#define IS_ENPASSANT(move) ((move & 0xc000) == 0x8000)
-#define IS_CASTLING(move) ((move & 0xc000) == 0xc000)
-#define PROMOTION_PIECE(move) (((move & 0x3000) >> 12) + 1)
-#define SOURCE(move) (move & 0x3f)
-#define DEST(move) ((move & 0xfff) >> 6)
+#define IS_PROMOTION(move) (((move) & 0xc000) == 0x4000)
+#define IS_ENPASSANT(move) (((move) & 0xc000) == 0x8000)
+#define IS_CASTLING(move) (((move) & 0xc000) == 0xc000)
+#define PROMOTION_PIECE(move) ((((move) & 0x3000) >> 12) + 1)
+#define SOURCE(move) ((move) & 0x3f)
+#define DEST(move) (((move) & 0xfff) >> 6)
 
 enum PieceType {
 	PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING, PIECE_TYPE_NONE
@@ -77,7 +77,7 @@ enum Square {
 	A8, B8, C8, D8, E8, F8, G8, H8,
 	SQUARE_NONE
 };
-#define MOVE(source, dest) (source + (dest << 6))
+#define MOVE(source, dest) ((source) + ((dest) << 6))
 
 enum Direction {
 	NORTH = 8, SOUTH = -8, WEST = -1, EAST = 1, NORTHWEST = 7, NORTHEAST = 9,

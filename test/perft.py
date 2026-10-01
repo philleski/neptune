@@ -1,9 +1,12 @@
-#!/usr/local/bin/python3
+#!/usr/bin/env python3
 # Tests taken from https://chessprogramming.org/Perft_Results
+# --smoke runs a shallow initial-position check. The default is the full suite.
 
-from subprocess import Popen, PIPE
+import sys
 
-tests = [
+from driver import run
+
+FULL = [
     {
         'name': 'Initial',
         'fen': 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
@@ -45,20 +48,32 @@ tests = [
         'fen': 'r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10',
         'depth': 5,
         'answer': 164075551,
-    }
+    },
 ]
 
-engine_path = '../src/neptune'
-for test in tests:
-    p = Popen([engine_path], stdout=PIPE, stdin=PIPE, stderr=PIPE)
-    command = '_perft ' + str(test['depth']) + ' ' + test['fen'] + '\nquit'
-    out, err = p.communicate(input=command.encode('ascii'))
-    if p.returncode != 0 or err:
-        raise Exception('Engine error on ' + test['name'] + ': ' + err.decode('ascii', 'replace'))
-    if err:
-        raise Exception(err)
-    result = out.decode('ascii')
-    answer, time_ms = result.rstrip('\n').split(' ')
-    if answer != str(test['answer']):
-        raise Exception('Test failed: ' + test['name'] + ', ' + answer + ', ' + str(test['answer']))
-    print(test['name'] + ': ' + time_ms + 'ms')
+SMOKE = [
+    {
+        'name': 'Initial depth 4',
+        'fen': 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+        'depth': 4,
+        'answer': 197281,
+    },
+]
+
+
+def main():
+    tests = SMOKE if '--smoke' in sys.argv else FULL
+    commands = ['_perft %s %s' % (test['depth'], test['fen']) for test in tests]
+    timeout = 60 if '--smoke' in sys.argv else 1800
+    lines = run(commands, timeout=timeout)
+    if len(lines) != len(tests):
+        raise Exception('Expected %s perft lines, got %s' % (len(tests), lines))
+    for test, line in zip(tests, lines):
+        answer, time_ms = line.split(' ')
+        if answer != str(test['answer']):
+            raise Exception('Test failed: %s, %s, %s' % (test['name'], answer, test['answer']))
+        print(test['name'] + ': ' + time_ms + 'ms')
+
+
+if __name__ == '__main__':
+    main()

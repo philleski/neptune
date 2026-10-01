@@ -20,6 +20,7 @@ struct PawnEntry {
 	bool used;
 };
 
+// Fitness is the static evaluation score.
 class Evaluation {
 public:
 	Evaluation();

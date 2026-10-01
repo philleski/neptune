@@ -3,9 +3,7 @@
 
 #include "types.h"
 
-#define SQ(rank, file) (rank * 8 + file)
-#define FILE(square) ('a' + (square % 8))
-#define RANK(square) ('1' + (square / 8))
+#define SQ(rank, file) ((rank) * 8 + (file))
 
 extern Bitboard BB_SET[64];
 extern Bitboard BB_CLR[64];
