@@ -85,7 +85,7 @@ void MoveGen::initAttackSquaresShortRange(int stepSizes[],
 	}
 }
 
-Move *MoveGen::appendMovesForPawn(Board *board, Move *moves) {
+Move *MoveGen::appendMovesForPawn(Board *board, Move *moves, bool capturesOnly) {
 	Bitboard bitboard = board->bitboards[PIECE(board->turn, PAWN)];
 	while(bitboard) {
 		int mover = popBit(&bitboard);
@@ -104,7 +104,7 @@ Move *MoveGen::appendMovesForPawn(Board *board, Move *moves) {
 			attackSquaresPawnCapture[board->turn][mover];
 		attackSquaresCapture &= (board->playerBitboards[FLIP(board->turn)] |
 			board->enPassantTarget);
-		while(attackSquaresMove) {
+		while(attackSquaresMove && !capturesOnly) {
 			int attackSquare = popBit(&attackSquaresMove);
 			Move move = MOVE(mover, attackSquare);
 			if(isPromotable) {
@@ -136,13 +136,16 @@ Move *MoveGen::appendMovesForPawn(Board *board, Move *moves) {
 }
 
 Move *MoveGen::appendMovesForShortRangePiece(Bitboard bitboard,
-		Bitboard *attackSquares, Board *board, Move *moves) {
+		Bitboard *attackSquares, Board *board, Move *moves, bool capturesOnly) {
 	while(bitboard) {
 		int mover = popBit(&bitboard);
 		Bitboard attackSquaresFiltered = attackSquares[mover] &
 			~board->playerBitboards[board->turn];
 		while(attackSquaresFiltered) {
 			int attackSquare = popBit(&attackSquaresFiltered);
+			if(capturesOnly && !(board->allPieces & BB_SET[attackSquare])) {
+				continue;
+			}
 			*moves++ = MOVE(mover, attackSquare);
 		}
 	}
@@ -150,13 +153,16 @@ Move *MoveGen::appendMovesForShortRangePiece(Bitboard bitboard,
 }
 
 Move *MoveGen::appendMovesForLongRangePiece(Bitboard bitboard,
-		PieceType movementType, Board *board, Move *moves) {
+		PieceType movementType, Board *board, Move *moves, bool capturesOnly) {
 	while(bitboard) {
 		int mover = popBit(&bitboard);
 		Bitboard attackSquares = slidingAttack.getAttackSquares(mover,
 			movementType, board->allPieces, board->playerBitboards[board->turn]);
 		while(attackSquares) {
 			int attackSquare = popBit(&attackSquares);
+			if(capturesOnly && !(board->allPieces & BB_SET[attackSquare])) {
+				continue;
+			}
 			*moves++ = MOVE(mover, attackSquare);
 		}
 	}
@@ -190,29 +196,40 @@ Move *MoveGen::appendMovesForCastling(Board *board, Move *moves) {
 	return moves;
 }
 
-Move *MoveGen::legalMovesFast(Board *board, Move *moves) {
+Move *MoveGen::legalMovesFast(Board *board, Move *moves, bool capturesOnly) {
 	Move *movesCurrent = moves;
-	movesCurrent = appendMovesForPawn(board, movesCurrent);
+	movesCurrent = appendMovesForPawn(board, movesCurrent, capturesOnly);
 	movesCurrent = appendMovesForShortRangePiece(
 		board->bitboards[PIECE(board->turn, KNIGHT)], attackSquaresKnight,
-		board, movesCurrent);
+		board, movesCurrent, capturesOnly);
 	movesCurrent = appendMovesForLongRangePiece(
 		board->bitboards[PIECE(board->turn, BISHOP)], BISHOP, board,
-		movesCurrent);
+		movesCurrent, capturesOnly);
 	movesCurrent = appendMovesForLongRangePiece(
 		board->bitboards[PIECE(board->turn, ROOK)], ROOK, board,
-		movesCurrent);
+		movesCurrent, capturesOnly);
 	movesCurrent = appendMovesForLongRangePiece(
 		board->bitboards[PIECE(board->turn, QUEEN)], BISHOP, board,
-		movesCurrent);
+		movesCurrent, capturesOnly);
 	movesCurrent = appendMovesForLongRangePiece(
 		board->bitboards[PIECE(board->turn, QUEEN)], ROOK, board,
-		movesCurrent);
+		movesCurrent, capturesOnly);
 	movesCurrent = appendMovesForShortRangePiece(
 		board->bitboards[PIECE(board->turn, KING)], attackSquaresKing,
-		board, movesCurrent);
-	movesCurrent = appendMovesForCastling(board, movesCurrent);
+		board, movesCurrent, capturesOnly);
+	if(!capturesOnly) {
+		movesCurrent = appendMovesForCastling(board, movesCurrent);
+	}
 	return movesCurrent;
+}
+
+bool MoveGen::inCheck(Board *board) {
+	Bitboard ourKings = board->bitboards[PIECE(board->turn, KING)];
+	if(ourKings == BB_EMPTY) {
+		return true;
+	}
+	Square ourKingSquare = (Square) popBit(&ourKings);
+	return isSquareAttacked(board, ourKingSquare);
 }
 
 bool MoveGen::isSquareAttacked(Board *board, Square square) {

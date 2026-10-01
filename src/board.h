@@ -10,6 +10,8 @@ struct Undo {
 	Piece movedPiece;
 	Bitboard enPassantTarget;
 	unsigned int castleRights;
+	U64 positionHash;
+	U64 positionHashPawnsKings;
 };
 
 class Board {
@@ -20,6 +22,8 @@ public:
 	void unmove(Move move);
 	void setPosition(std::string fen);
 	bool hasCastleRight(CastleRight castleRight);
+	bool isCapture(Move move);
+	bool hashesMatchRecompute();
 
 	Bitboard bitboards[PIECE_NONE];
 	Bitboard playerBitboards[2];
@@ -29,9 +33,15 @@ public:
 	// Bits 0-4 are used according to the enum CastleRight
 	unsigned int castleRights;
 	int ply;
+	U64 positionHash;
+	U64 positionHashPawnsKings;
 private:
 	void clear();
 	void updateSummaryBitboards();
+	void recomputeHash();
+	void xorPiece(int piece, int square);
+	void xorEp();
+	void xorCastle();
 	void setEnPassantTarget(Move move);
 	void unsetEnPassantTarget();
 	void moveEnPassant(Move move);

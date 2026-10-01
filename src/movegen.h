@@ -10,18 +10,19 @@ const char *printMove(Move move);
 class MoveGen {
 public:
 	MoveGen();
-	Move *legalMovesFast(Board *board, Move *moves);
+	Move *legalMovesFast(Board *board, Move *moves, bool capturesOnly = false);
 	bool isLegal(Board *board, Move move);
+	bool inCheck(Board *board);
 private:
 	void initAttackSquaresPawn(Color color);
 	void initAttackSquaresShortRange(int stepSizes[],
 		Bitboard *attackSquares);
 
-	Move *appendMovesForPawn(Board *board, Move *moves);
+	Move *appendMovesForPawn(Board *board, Move *moves, bool capturesOnly);
 	Move *appendMovesForShortRangePiece(Bitboard bitboard,
-		Bitboard *attackSquares, Board *board, Move *moves);
+		Bitboard *attackSquares, Board *board, Move *moves, bool capturesOnly);
 	Move *appendMovesForLongRangePiece(Bitboard bitboard,
-		PieceType movementType, Board *board, Move *moves);
+		PieceType movementType, Board *board, Move *moves, bool capturesOnly);
 	Move *appendMovesForCastling(Board *board, Move *moves);
 
 	Bitboard attackSquaresPawnMove[2][64];

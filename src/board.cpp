@@ -3,6 +3,7 @@
 
 #include "bitboard.h"
 #include "board.h"
+#include "zobrist.h"
 
 Board::Board() {
 	int piece;
@@ -46,6 +47,7 @@ Board::Board() {
 	enPassantTarget = BB_EMPTY;
 	turn = WHITE;
 	ply = 0;
+	recomputeHash();
 }
 
 void Board::print() {
@@ -215,6 +217,61 @@ void Board::setPosition(std::string fen) {
 	// Steps 5-6: Halfmove clock and Ply Count
 	ss >> std::skipws >> halfmove >> fullmove;
 	ply = 2 * (fullmove - 1) + (turn == BLACK);
+	recomputeHash();
+}
+
+void Board::xorPiece(int piece, int square) {
+	U64 key = zobristPiece(piece, square);
+	positionHash ^= key;
+	int pieceType = piece % 6;
+	if(pieceType == PAWN || pieceType == KING) {
+		positionHashPawnsKings ^= key;
+	}
+}
+
+void Board::xorEp() {
+	if(enPassantTarget == BB_EMPTY) {
+		return;
+	}
+	Bitboard target = enPassantTarget;
+	int square = popBit(&target);
+	positionHash ^= zobristEp(square % 8);
+}
+
+void Board::xorCastle() {
+	positionHash ^= zobristCastle(castleRights);
+}
+
+void Board::recomputeHash() {
+	initZobrist();
+	positionHash = 0;
+	positionHashPawnsKings = 0;
+	for(int piece = WHITE_PAWN; piece <= BLACK_KING; piece++) {
+		Bitboard bitboard = bitboards[piece];
+		while(bitboard) {
+			int square = popBit(&bitboard);
+			xorPiece(piece, square);
+		}
+	}
+	if(turn == BLACK) {
+		positionHash ^= zobristSide();
+	}
+	xorEp();
+	xorCastle();
+}
+
+bool Board::hashesMatchRecompute() {
+	U64 full = positionHash;
+	U64 pawns = positionHashPawnsKings;
+	recomputeHash();
+	bool matches = positionHash == full && positionHashPawnsKings == pawns;
+	positionHash = full;
+	positionHashPawnsKings = pawns;
+	return matches;
+}
+
+bool Board::isCapture(Move move) {
+	return allPieces & BB_SET[DEST(move)];
 }
 
 void Board::setEnPassantTarget(Move move) {
@@ -229,6 +286,7 @@ void Board::unsetEnPassantTarget() {
 void Board::moveEnPassant(Move move) {
 	Color turnFlipped = FLIP(turn);
 	unsigned int target = DEST(move) + BACKWARD(turn);
+	xorPiece(PIECE(turnFlipped, PAWN), target);
 	bitboards[PIECE(turnFlipped, PAWN)] &= BB_CLR[target];
 	playerBitboards[turnFlipped] &= BB_CLR[target];
 	allPieces &= BB_CLR[target];
@@ -278,8 +336,12 @@ void Board::moveCastle(Move move) {
 	} else {
 		return;
 	}
-	Bitboard occRookStartClr = BB_CLR[CASTLE_ROOK_START(turn, castleType)];
-	Bitboard occRookEnd = BB_SET[CASTLE_ROOK_END(turn, castleType)];
+	int rookStart = CASTLE_ROOK_START(turn, castleType);
+	int rookEnd = CASTLE_ROOK_END(turn, castleType);
+	xorPiece(PIECE(turn, ROOK), rookStart);
+	xorPiece(PIECE(turn, ROOK), rookEnd);
+	Bitboard occRookStartClr = BB_CLR[rookStart];
+	Bitboard occRookEnd = BB_SET[rookEnd];
 	bitboards[PIECE(turn, ROOK)] &= occRookStartClr;
 	bitboards[PIECE(turn, ROOK)] |= occRookEnd;
 	playerBitboards[turn] &= occRookStartClr;
@@ -314,6 +376,8 @@ void Board::movePromote(Move move) {
 	int destination = DEST(move);
 	Bitboard occDest = BB_SET[destination];
 	// The pawn was already transferred to the destination square so remove it.
+	xorPiece(PIECE(turn, PAWN), destination);
+	xorPiece(PIECE(turn, PROMOTION_PIECE(move)), destination);
 	bitboards[PIECE(turn, PAWN)] &= ~occDest;
 	bitboards[PIECE(turn, PROMOTION_PIECE(move))] |= occDest;
 }
@@ -328,8 +392,14 @@ void Board::unmovePromote(Move move) {
 void Board::move(Move move) {
 	undoHistory[ply].castleRights = castleRights;
 	undoHistory[ply].enPassantTarget = enPassantTarget;
+	undoHistory[ply].positionHash = positionHash;
+	undoHistory[ply].positionHashPawnsKings = positionHashPawnsKings;
+	xorEp();
+	xorCastle();
 	Bitboard occSource = BB_SET[SOURCE(move)];
 	Bitboard occDest = BB_SET[DEST(move)];
+	int source = SOURCE(move);
+	int destination = DEST(move);
 	int pieceStartUs = turn == WHITE ? WHITE_PAWN : BLACK_PAWN;
 	int pieceEndUs = turn == WHITE ? WHITE_KING : BLACK_KING;
 	int turnFlipped = FLIP(turn);
@@ -344,6 +414,8 @@ void Board::move(Move move) {
 		}
 		bitboards[piece] &= ~occSource;
 		bitboards[piece] |= occDest;
+		xorPiece(piece, source);
+		xorPiece(piece, destination);
 		playerBitboards[turn] &= ~occSource;
 		playerBitboards[turn] |= occDest;
 		allPieces &= ~occSource;
@@ -367,6 +439,7 @@ void Board::move(Move move) {
 				}
 				bitboards[capturedPiece] &= ~occDest;
 				playerBitboards[turnFlipped] &= ~occDest;
+				xorPiece(capturedPiece, destination);
 				undoHistory[ply].capturedPiece = (Piece) capturedPiece;
 				break;
 			}
@@ -386,6 +459,9 @@ void Board::move(Move move) {
 		undoHistory[ply].movedPiece = (Piece) piece;
 		break;
 	}
+	xorEp();
+	xorCastle();
+	positionHash ^= zobristSide();
 	turn = (Color) turnFlipped;
 	ply++;
 }
@@ -398,6 +474,8 @@ void Board::unmove(Move move) {
 	ply--;
 	castleRights = undoHistory[ply].castleRights;
 	enPassantTarget = undoHistory[ply].enPassantTarget;
+	positionHash = undoHistory[ply].positionHash;
+	positionHashPawnsKings = undoHistory[ply].positionHashPawnsKings;
 
 	int piece = undoHistory[ply].movedPiece;
 	int capturedPiece = undoHistory[ply].capturedPiece;
