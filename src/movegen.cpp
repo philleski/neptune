@@ -1,5 +1,3 @@
-#include <cstring>
-
 #include "bitboard.h"
 #include "board.h"
 #include "movegen.h"
@@ -18,14 +16,18 @@ MoveGen::MoveGen() {
 	castleBlockers[BLACK_KINGSIDE] = BB_SET[F8] | BB_SET[G8];
 	castleBlockers[BLACK_QUEENSIDE] = BB_SET[D8] | BB_SET[C8] | BB_SET[B8];
 
-	memcpy(castlePath[WHITE_KINGSIDE], (int []){E1, F1, G1},
-		sizeof castlePath[WHITE_KINGSIDE]);
-	memcpy(castlePath[WHITE_QUEENSIDE], (int []){E1, D1, C1},
-		sizeof castlePath[WHITE_QUEENSIDE]);
-	memcpy(castlePath[BLACK_KINGSIDE], (int []){E8, F8, G8},
-		sizeof castlePath[BLACK_KINGSIDE]);
-	memcpy(castlePath[BLACK_QUEENSIDE], (int []){E8, D8, C8},
-		sizeof castlePath[BLACK_QUEENSIDE]);
+	castlePath[WHITE_KINGSIDE][0] = E1;
+	castlePath[WHITE_KINGSIDE][1] = F1;
+	castlePath[WHITE_KINGSIDE][2] = G1;
+	castlePath[WHITE_QUEENSIDE][0] = E1;
+	castlePath[WHITE_QUEENSIDE][1] = D1;
+	castlePath[WHITE_QUEENSIDE][2] = C1;
+	castlePath[BLACK_KINGSIDE][0] = E8;
+	castlePath[BLACK_KINGSIDE][1] = F8;
+	castlePath[BLACK_KINGSIDE][2] = G8;
+	castlePath[BLACK_QUEENSIDE][0] = E8;
+	castlePath[BLACK_QUEENSIDE][1] = D8;
+	castlePath[BLACK_QUEENSIDE][2] = C8;
 }
 
 void MoveGen::initAttackSquaresPawn(Color color) {
