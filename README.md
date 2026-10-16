@@ -1,6 +1,6 @@
 # Neptune
 
-Neptune is a [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) chess engine written in C++: alpha-beta search with a transposition table and a hand-tuned evaluation. Move generation is verified against the published perft suite and computes about 24 million leaf positions per second.
+Neptune is a [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) chess engine written in C++: alpha-beta search with a transposition table and a hand-tuned evaluation. Move generation is verified against the published perft suite and computes about 24 million leaf positions per second on a single core of an Apple M3 Max.
 
 ## How it works
 
