@@ -5,10 +5,6 @@
 const float Evaluation::FITNESS_LARGE = 1000000000.0f;
 const float Evaluation::FITNESS_MOVE = 10000.0f;
 
-static int countBits(Bitboard bitboard) {
-	return __builtin_popcountll(bitboard);
-}
-
 static int kingSquare(Bitboard kings) {
 	if(kings == BB_EMPTY) {
 		return -1;
@@ -17,7 +13,11 @@ static int kingSquare(Bitboard kings) {
 }
 
 static Bitboard flipRanks(Bitboard bitboard) {
+#if defined(__clang__) || defined(__GNUC__)
 	return __builtin_bswap64(bitboard);
+#else
+#error flipRanks has no fallback for this compiler
+#endif
 }
 
 Evaluation::Evaluation() : pawnTable(PAWN_TABLE_SIZE) {

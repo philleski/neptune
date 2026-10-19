@@ -48,6 +48,8 @@ Board::Board() {
 	enPassantTarget = BB_EMPTY;
 	turn = WHITE;
 	ply = 0;
+	halfmoveClock = 0;
+	historyPly = 0;
 	recomputeHash();
 }
 
@@ -66,6 +68,7 @@ void Board::clear() {
 		bitboards[piece] = BB_EMPTY;
 	}
 	ply = 0;
+	halfmoveClock = 0;
 	enPassantTarget = BB_EMPTY;
 	turn = WHITE;
 	castleRights = 0;
@@ -75,7 +78,9 @@ void Board::clear() {
 // Based off https://github.com/official-stockfish/Stockfish/blob/master/src/position.cpp
 void Board::setPosition(std::string fen) {
 	unsigned char column, row, token;
-	int halfmove, fullmove, square = A8;
+	int halfmove = 0;
+	int fullmove = 1;
+	int square = A8;
 	std::istringstream ss(fen);
 
 	ss >> std::noskipws;
@@ -159,9 +164,18 @@ void Board::setPosition(std::string fen) {
 		}
 	}
 
-	// Steps 5-6: Halfmove clock and Ply Count
+	// Steps 5-6: Halfmove clock and fullmove counter.
+	// A missing field fails the read. The clock then stays 0, and fullmove stays 1.
 	ss >> std::skipws >> halfmove >> fullmove;
+	if(halfmove < 0) {
+		halfmove = 0;
+	}
+	if(fullmove < 1) {
+		fullmove = 1;
+	}
 	ply = 2 * (fullmove - 1) + (turn == BLACK);
+	historyPly = ply;
+	halfmoveClock = halfmove;
 	recomputeHash();
 }
 
@@ -217,6 +231,61 @@ bool Board::hashesMatchRecompute() {
 
 bool Board::isCapture(Move move) {
 	return allPieces & BB_SET[DEST(move)];
+}
+
+bool Board::isRepetition() {
+	// The position after a pawn move or capture cannot match anything earlier.
+	int oldest = historyPly;
+	if(halfmoveClock < ply) {
+		int sinceIrreversible = ply - halfmoveClock;
+		if(sinceIrreversible > oldest) {
+			oldest = sinceIrreversible;
+		}
+	}
+	int matches = 0;
+	for(int earlier = ply - 2; earlier >= oldest; earlier -= 2) {
+		if(undoHistory[earlier].positionHash == positionHash) {
+			matches++;
+			if(matches >= 2) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool Board::isDeadPosition() {
+	// Pawns, rooks, or queens can mate. Most nodes fail here.
+	if((bitboards[WHITE_PAWN] | bitboards[BLACK_PAWN] |
+			bitboards[WHITE_ROOK] | bitboards[BLACK_ROOK] |
+			bitboards[WHITE_QUEEN] | bitboards[BLACK_QUEEN]) != BB_EMPTY) {
+		return false;
+	}
+	// One set bit is one piece. Two knights, or a knight and a bishop, set more.
+	Bitboard knights = bitboards[WHITE_KNIGHT] | bitboards[BLACK_KNIGHT];
+	Bitboard bishops = bitboards[WHITE_BISHOP] | bitboards[BLACK_BISHOP];
+	if(knights == BB_EMPTY && bishops == BB_EMPTY) {
+		return true;
+	}
+	if(bishops == BB_EMPTY && (knights & (knights - 1)) == BB_EMPTY) {
+		return true;
+	}
+	if(knights == BB_EMPTY && (bishops & (bishops - 1)) == BB_EMPTY) {
+		return true;
+	}
+	Bitboard whiteBishop = bitboards[WHITE_BISHOP];
+	Bitboard blackBishop = bitboards[BLACK_BISHOP];
+	if(knights != BB_EMPTY || whiteBishop == BB_EMPTY || blackBishop == BB_EMPTY ||
+			(whiteBishop & (whiteBishop - 1)) != BB_EMPTY ||
+			(blackBishop & (blackBishop - 1)) != BB_EMPTY) {
+		return false;
+	}
+	int whiteSquare = popBit(&whiteBishop);
+	int blackSquare = popBit(&blackBishop);
+	// a1 is dark, so a file-plus-rank of 0 is a dark square.
+	bool whiteOnDark = (((whiteSquare & 7) + (whiteSquare >> 3)) & 1) == 0;
+	bool blackOnDark = (((blackSquare & 7) + (blackSquare >> 3)) & 1) == 0;
+	return whiteOnDark == blackOnDark;
 }
 
 void Board::setEnPassantTarget(Move move) {
@@ -340,6 +409,7 @@ void Board::move(Move played) {
 	undoHistory[ply].enPassantTarget = enPassantTarget;
 	undoHistory[ply].positionHash = positionHash;
 	undoHistory[ply].positionHashPawnsKings = positionHashPawnsKings;
+	undoHistory[ply].halfmoveClock = halfmoveClock;
 	xorEp();
 	xorCastle();
 	Bitboard occSource = BB_SET[SOURCE(played)];
@@ -403,6 +473,14 @@ void Board::move(Move played) {
 			movePromote(played);
 		}
 		undoHistory[ply].movedPiece = (Piece) piece;
+		// En passant captures a pawn that is not standing on the destination square.
+		bool pawnMove = piece == WHITE_PAWN || piece == BLACK_PAWN;
+		bool capture = undoHistory[ply].capturedPiece != PIECE_NONE || IS_ENPASSANT(played);
+		if(pawnMove || capture) {
+			halfmoveClock = 0;
+		} else {
+			halfmoveClock++;
+		}
 		break;
 	}
 	xorEp();
@@ -422,6 +500,7 @@ void Board::unmove(Move move) {
 	enPassantTarget = undoHistory[ply].enPassantTarget;
 	positionHash = undoHistory[ply].positionHash;
 	positionHashPawnsKings = undoHistory[ply].positionHashPawnsKings;
+	halfmoveClock = undoHistory[ply].halfmoveClock;
 
 	int piece = undoHistory[ply].movedPiece;
 	int capturedPiece = undoHistory[ply].capturedPiece;
