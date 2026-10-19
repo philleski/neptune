@@ -255,46 +255,37 @@ bool Board::isRepetition() {
 }
 
 bool Board::isDeadPosition() {
-	if(bitboards[WHITE_KING] == BB_EMPTY || bitboards[BLACK_KING] == BB_EMPTY) {
+	// Pawns, rooks, or queens can mate. Most nodes fail here.
+	if((bitboards[WHITE_PAWN] | bitboards[BLACK_PAWN] |
+			bitboards[WHITE_ROOK] | bitboards[BLACK_ROOK] |
+			bitboards[WHITE_QUEEN] | bitboards[BLACK_QUEEN]) != BB_EMPTY) {
 		return false;
 	}
-	for(int piece = WHITE_PAWN; piece <= BLACK_KING; piece++) {
-		if(piece == WHITE_KING || piece == BLACK_KING) {
-			continue;
-		}
-		if(piece == WHITE_KNIGHT || piece == BLACK_KNIGHT) {
-			continue;
-		}
-		if(piece == WHITE_BISHOP || piece == BLACK_BISHOP) {
-			continue;
-		}
-		if(bitboards[piece] != BB_EMPTY) {
-			return false;
-		}
-	}
-	int knights = countBits(bitboards[WHITE_KNIGHT]) + countBits(bitboards[BLACK_KNIGHT]);
-	int whiteBishops = countBits(bitboards[WHITE_BISHOP]);
-	int blackBishops = countBits(bitboards[BLACK_BISHOP]);
-	int bishops = whiteBishops + blackBishops;
-	if(knights == 0 && bishops == 0) {
+	// One set bit is one piece. Two knights, or a knight and a bishop, set more.
+	Bitboard knights = bitboards[WHITE_KNIGHT] | bitboards[BLACK_KNIGHT];
+	Bitboard bishops = bitboards[WHITE_BISHOP] | bitboards[BLACK_BISHOP];
+	if(knights == BB_EMPTY && bishops == BB_EMPTY) {
 		return true;
 	}
-	if(knights == 1 && bishops == 0) {
+	if(bishops == BB_EMPTY && (knights & (knights - 1)) == BB_EMPTY) {
 		return true;
 	}
-	if(knights == 0 && bishops == 1) {
+	if(knights == BB_EMPTY && (bishops & (bishops - 1)) == BB_EMPTY) {
 		return true;
-	}
-	if(knights != 0 || whiteBishops != 1 || blackBishops != 1) {
-		return false;
 	}
 	Bitboard whiteBishop = bitboards[WHITE_BISHOP];
 	Bitboard blackBishop = bitboards[BLACK_BISHOP];
+	if(knights != BB_EMPTY || whiteBishop == BB_EMPTY || blackBishop == BB_EMPTY ||
+			(whiteBishop & (whiteBishop - 1)) != BB_EMPTY ||
+			(blackBishop & (blackBishop - 1)) != BB_EMPTY) {
+		return false;
+	}
 	int whiteSquare = popBit(&whiteBishop);
 	int blackSquare = popBit(&blackBishop);
-	int whiteColor = ((whiteSquare & 7) + (whiteSquare >> 3)) & 1;
-	int blackColor = ((blackSquare & 7) + (blackSquare >> 3)) & 1;
-	return whiteColor == blackColor;
+	// a1 is dark, so a file-plus-rank of 0 is a dark square.
+	bool whiteOnDark = (((whiteSquare & 7) + (whiteSquare >> 3)) & 1) == 0;
+	bool blackOnDark = (((blackSquare & 7) + (blackSquare >> 3)) & 1) == 0;
+	return whiteOnDark == blackOnDark;
 }
 
 void Board::setEnPassantTarget(Move move) {
