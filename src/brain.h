@@ -35,6 +35,7 @@ private:
 	float quiescentSearch(Board *board, float alpha, float beta, int target);
 	void storeScore(U64 hash, int depth, float score, Move move, int type, bool pathDependent);
 	int collectLegal(Board *board, Move *moves, bool capturesOnly, int depth, Move ttMove);
+	int collectTactical(Board *board, Move *moves);
 	void orderMoves(Move *moves, int count, Board *board, int depth, Move ttMove);
 	bool isKiller(Move move, int depth);
 	void insertKiller(Move move, int depth);
