@@ -1,4 +1,4 @@
-# 0004. Search scores and transposition bounds
+# 0005. Search scores and transposition bounds
 
 Date: 2026-10-19
 
