@@ -27,14 +27,38 @@ def expect_info(info, name):
     has_score = 'score cp' in info or 'score mate' in info
     if not info.startswith('info ') or 'depth' not in info or not has_score or ' pv' not in info:
         raise Exception('%s: info line missing fields: %s' % (name, info))
+    if ' nodes ' not in info or ' time ' not in info:
+        raise Exception('%s: info line missing nodes or time: %s' % (name, info))
 
 
-def expect_best(out, name, move):
-    info = out.next()
-    found = out.next()
+def last_search(out, name):
+    info = None
+    while True:
+        line = out.next()
+        if line.startswith('info '):
+            info = line
+            continue
+        if line.startswith('bestmove '):
+            if info is None:
+                raise Exception('%s: no info line before bestmove' % name)
+            return info, line
+        raise Exception('%s: expected info or bestmove, got %s' % (name, line))
+
+
+def info_depth(info, name):
     expect_info(info, name)
-    if not found.startswith('bestmove '):
-        raise Exception('%s: expected bestmove, got %s' % (name, found))
+    parts = info.split()
+    try:
+        return int(parts[parts.index('depth') + 1])
+    except (ValueError, IndexError):
+        raise Exception('%s: no depth in %s' % (name, info))
+
+
+def expect_best(out, name, move, depth=None):
+    info, found = last_search(out, name)
+    expect_info(info, name)
+    if depth is not None and info_depth(info, name) != depth:
+        raise Exception('%s: depth %s, expected %s' % (name, info_depth(info, name), depth))
     got = found.split(' ')[1]
     if got != move:
         raise Exception('%s: expected %s, got %s' % (name, move, got))
@@ -51,8 +75,7 @@ def score_of(info, name):
 
 
 def expect_scored(out, name, move, score=None, score_min=None, score_max=None):
-    info = out.next()
-    found = out.next()
+    info, found = last_search(out, name)
     value = score_of(info, name)
     if not found.startswith('bestmove '):
         raise Exception('%s: expected bestmove, got %s' % (name, found))
@@ -79,10 +102,11 @@ def mate_of(info, name):
         raise Exception('%s: no mate score in %s' % (name, info))
 
 
-def expect_mate(out, name, move, moves):
-    info = out.next()
-    found = out.next()
+def expect_mate(out, name, move, moves, depth=None):
+    info, found = last_search(out, name)
     got = mate_of(info, name)
+    if depth is not None and info_depth(info, name) != depth:
+        raise Exception('%s: depth %s, expected %s' % (name, info_depth(info, name), depth))
     if not found.startswith('bestmove '):
         raise Exception('%s: expected bestmove, got %s' % (name, found))
     played = found.split(' ')[1]
@@ -94,8 +118,7 @@ def expect_mate(out, name, move, moves):
 
 
 def expect_some_move(out, name):
-    info = out.next()
-    found = out.next()
+    info, found = last_search(out, name)
     expect_info(info, name)
     if not found.startswith('bestmove '):
         raise Exception('%s: expected bestmove, got %s' % (name, found))
@@ -295,7 +318,7 @@ def main():
         raise Exception('ucinewgame hash %s, startpos %s' % (fresh, start_hash))
     print('ucinewgame: ok')
 
-    expect_mate(out, 'mate in one', 'd8h4', 1)
+    expect_mate(out, 'mate in one', 'd8h4', 1, depth=6)
     expect_mate(out, 'mate in one at fullmove 1', 'd8h4', 1)
     expect_mate(out, 'mate in one at fullmove 40', 'd8h4', 1)
     expect_mate(out, 'fastest mate', 'b2b8', 1)
@@ -401,6 +424,73 @@ def main():
     if eof_lines != ['readyok']:
         raise Exception('eof output: %s' % eof_lines)
     print('eof: ok')
+
+    time_control()
+
+
+START_MOVES = {
+    'a2a3', 'a2a4', 'b2b3', 'b2b4', 'c2c3', 'c2c4', 'd2d3', 'd2d4',
+    'e2e3', 'e2e4', 'f2f3', 'f2f4', 'g2g3', 'g2g4', 'h2h3', 'h2h4',
+    'b1a3', 'b1c3', 'g1f3', 'g1h3',
+}
+
+
+def search_lines(lines, name):
+    infos = [line for line in lines if line.startswith('info ')]
+    bests = [line for line in lines if line.startswith('bestmove ')]
+    if not infos or len(bests) != 1:
+        raise Exception('%s: expected info and one bestmove, got %s' % (name, lines))
+    return infos[-1], bests[0]
+
+
+def time_control():
+    mate_lines = run([
+        'ucinewgame',
+        'position startpos moves f2f3 e7e5 g2g4',
+        'go movetime 0',
+    ], timeout=30)
+    info, best = search_lines(mate_lines, 'movetime 0')
+    if info_depth(info, 'movetime 0') != 1:
+        raise Exception('movetime 0: depth %s, expected 1' % info_depth(info, 'movetime 0'))
+    if mate_of(info, 'movetime 0') != 1:
+        raise Exception('movetime 0: mate %s, expected 1' % mate_of(info, 'movetime 0'))
+    got = best.split()[1]
+    if got != 'd8h4':
+        raise Exception('movetime 0: expected d8h4, got %s' % got)
+    print('movetime 0: ' + got)
+
+    clock_lines = run([
+        'position startpos',
+        'go wtime 0 btime 0',
+    ], timeout=30)
+    info, best = search_lines(clock_lines, 'zero clock')
+    if info_depth(info, 'zero clock') != 1:
+        raise Exception('zero clock: depth %s, expected 1' % info_depth(info, 'zero clock'))
+    got = best.split()[1]
+    if got not in START_MOVES:
+        raise Exception('zero clock: expected a legal move, got %s' % got)
+    print('zero clock: ' + got)
+
+    # stop is already in the pipe when the search starts. A search that never
+    # reads it runs until the timeout.
+    infinite_lines = run([
+        'position startpos',
+        'go infinite',
+        'isready',
+        'stop',
+    ], timeout=10)
+    try:
+        ready_at = infinite_lines.index('readyok')
+    except ValueError:
+        raise Exception('infinite: no readyok in %s' % infinite_lines)
+    info_at = next(i for i, line in enumerate(infinite_lines) if line.startswith('info '))
+    best_at = next(i for i, line in enumerate(infinite_lines) if line.startswith('bestmove '))
+    if not (ready_at < info_at < best_at):
+        raise Exception('infinite: expected readyok, info, bestmove, got %s' % infinite_lines)
+    got = infinite_lines[best_at].split()[1]
+    if got not in START_MOVES:
+        raise Exception('infinite: expected a legal move, got %s' % got)
+    print('infinite stop: ' + got)
 
 
 if __name__ == '__main__':
