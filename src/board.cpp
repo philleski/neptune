@@ -272,10 +272,9 @@ bool Board::isDeadPosition() {
 			return false;
 		}
 	}
-	int knights = __builtin_popcountll(bitboards[WHITE_KNIGHT]) +
-		__builtin_popcountll(bitboards[BLACK_KNIGHT]);
-	int whiteBishops = __builtin_popcountll(bitboards[WHITE_BISHOP]);
-	int blackBishops = __builtin_popcountll(bitboards[BLACK_BISHOP]);
+	int knights = countBits(bitboards[WHITE_KNIGHT]) + countBits(bitboards[BLACK_KNIGHT]);
+	int whiteBishops = countBits(bitboards[WHITE_BISHOP]);
+	int blackBishops = countBits(bitboards[BLACK_BISHOP]);
 	int bishops = whiteBishops + blackBishops;
 	if(knights == 0 && bishops == 0) {
 		return true;
