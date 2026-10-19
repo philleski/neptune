@@ -1,9 +1,25 @@
 #include "brain.h"
 
 #include <cmath>
+#include <sys/time.h>
+
+static long long nowMillis() {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	return (long long) tv.tv_sec * 1000 + (long long) tv.tv_usec / 1000;
+}
 
 Brain::Brain() {
 	unsetKillers();
+	nodes = 0;
+	searchStartMs = 0;
+	searchAborted = false;
+	enforceHard = false;
+	useTime = false;
+	softMs = 0;
+	hardMs = 0;
+	pollStop = nullptr;
+	onInfo = nullptr;
 }
 
 void Brain::clear() {
@@ -28,6 +44,51 @@ void Brain::unsetKillers() {
 		killers[depth][0] = MOVE_NONE;
 		killers[depth][1] = MOVE_NONE;
 	}
+}
+
+bool Brain::visitNode() {
+	nodes++;
+	if(searchAborted) {
+		return true;
+	}
+	// The hard limit starts at depth 2. Stop is checked on every poll.
+	if((nodes & (NODE_POLL - 1)) != 0) {
+		return false;
+	}
+	if(enforceHard && nowMillis() - searchStartMs >= hardMs) {
+		searchAborted = true;
+		return true;
+	}
+	if(pollStop != nullptr && pollStop()) {
+		searchAborted = true;
+		return true;
+	}
+	return false;
+}
+
+bool Brain::clockHasRoom(long long elapsedMs, long long iterMs) const {
+	if(!useTime) {
+		return true;
+	}
+	if(elapsedMs >= softMs) {
+		return false;
+	}
+	// The next depth takes at least as long as this one.
+	if(iterMs >= softMs - elapsedMs) {
+		return false;
+	}
+	return true;
+}
+
+void Brain::emitInfo(SearchResult result) {
+	if(onInfo == nullptr) {
+		return;
+	}
+	long long elapsed = nowMillis() - searchStartMs;
+	if(elapsed < 0) {
+		elapsed = 0;
+	}
+	onInfo(result, nodes, (int) elapsed);
 }
 
 bool Brain::isKiller(Move move, int depth) {
@@ -170,6 +231,9 @@ int Brain::leafScore(Board *board) {
 }
 
 int Brain::quiescentSearch(Board *board, int alpha, int beta, int target) {
+	if(visitNode()) {
+		return 0;
+	}
 	// Missing king is a loss at this node. Distance is not the game ply.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
 		return -MATE;
@@ -222,6 +286,9 @@ int Brain::quiescentSearch(Board *board, int alpha, int beta, int target) {
 		board->move(move);
 		int score = backup(quiescentSearch(board, -beta, -alpha, childTarget));
 		board->unmove(move);
+		if(searchAborted) {
+			return 0;
+		}
 		if(score > bestScore) {
 			bestScore = score;
 		}
@@ -236,6 +303,9 @@ int Brain::quiescentSearch(Board *board, int alpha, int beta, int target) {
 }
 
 Brain::SearchScore Brain::alphabeta(Board *board, int depth, int alpha, int beta) {
+	if(visitNode()) {
+		return {0, false, true};
+	}
 	// Missing king is a loss at this node. Distance is not the game ply.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
 		storeScore(board->positionHash, depth, -MATE, MOVE_NONE, TT_PV, false);
@@ -255,6 +325,9 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, int alpha, int beta
 	bool claimDraw = board->halfmoveClock >= 100;
 	if(depth == 0) {
 		int stand = quiescentSearch(board, alpha, beta, -1);
+		if(searchAborted) {
+			return {0, false, true};
+		}
 		// The claim draws a lost horizon. A mate loss stays a loss.
 		if(claimDraw && stand < 0 && !isMateScore(stand)) {
 			return {0, true};
@@ -314,6 +387,9 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, int alpha, int beta
 		board->move(moves[i]);
 		SearchScore child = alphabeta(board, depth - 1, -beta, -alpha);
 		board->unmove(moves[i]);
+		if(child.aborted) {
+			return {0, false, true};
+		}
 		int score = backup(child.score);
 		if(score > bestScore) {
 			bestScore = score;
@@ -338,46 +414,78 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, int alpha, int beta
 	return {bestScore, bestPathDependent};
 }
 
-Move Brain::getMoveToDepth(Board *board, int depth, int *score, bool *pathDependent) {
-	unsetKillers();
+Brain::DepthResult Brain::getMoveToDepth(Board *board, int depth, Move previousBest) {
 	int alpha = -INF;
 	int beta = INF;
+	// The previous depth's move leads. Depth 1 has none, so a move stored
+	// from an earlier search of this position leads instead. The stored score
+	// does not cut the root off, and the root is not written back.
+	Move orderMove = previousBest;
+	if(orderMove == MOVE_NONE) {
+		TranspositionEntry entry;
+		if(transpositionTable.get(board->positionHash, &entry)) {
+			orderMove = entry.move;
+		}
+	}
 	Move moves[MAX_MOVES];
-	int count = collectLegal(board, moves, false, depth, MOVE_NONE);
+	int count = collectLegal(board, moves, false, depth, orderMove);
+	DepthResult result;
+	result.move = MOVE_NONE;
+	result.score = 0;
+	result.aborted = false;
 	if(count == 0) {
-		*pathDependent = false;
-		*score = moveGen.inCheck(board) ? -MATE : 0;
-		return MOVE_NONE;
+		result.score = moveGen.inCheck(board) ? -MATE : 0;
+		return result;
 	}
 	Move bestMove = MOVE_NONE;
 	int bestScore = -INF;
-	bool bestPathDependent = false;
 	for(int i = 0; i < count; i++) {
 		board->move(moves[i]);
 		SearchScore child = alphabeta(board, depth - 1, -beta, -alpha);
 		board->unmove(moves[i]);
+		if(child.aborted) {
+			result.aborted = true;
+			if(bestMove == MOVE_NONE) {
+				result.move = moves[0];
+				result.score = 0;
+			} else {
+				result.move = bestMove;
+				result.score = bestScore;
+			}
+			return result;
+		}
 		int fitness = backup(child.score);
 		if(bestMove == MOVE_NONE || fitness > bestScore) {
 			bestMove = moves[i];
 			bestScore = fitness;
 			alpha = fitness;
-			bestPathDependent = child.pathDependent;
 		}
 	}
-	*score = bestScore;
-	*pathDependent = bestPathDependent;
+	result.move = bestMove;
+	result.score = bestScore;
 	// The root window is not a table entry. Path-dependent child scores were
 	// already refused by storeScore.
-	return bestMove;
+	return result;
 }
 
-SearchResult Brain::getMove(Board *board, int maxDepth) {
-	if(maxDepth < 1) {
-		maxDepth = 1;
+SearchResult Brain::getMove(Board *board, SearchLimits limits, SearchStopFn stop, SearchInfoFn info) {
+	if(limits.maxDepth < 1) {
+		limits.maxDepth = 1;
 	}
-	if(maxDepth > MAX_DEPTH - 1) {
-		maxDepth = MAX_DEPTH - 1;
+	if(limits.maxDepth > MAX_DEPTH - 1) {
+		limits.maxDepth = MAX_DEPTH - 1;
 	}
+	unsetKillers();
+	nodes = 0;
+	searchAborted = false;
+	enforceHard = false;
+	useTime = limits.useTime;
+	softMs = limits.softMs;
+	hardMs = limits.hardMs;
+	pollStop = stop;
+	onInfo = info;
+	searchStartMs = nowMillis();
+
 	SearchResult result;
 	result.move = MOVE_NONE;
 	result.score = 0;
@@ -389,23 +497,53 @@ SearchResult Brain::getMove(Board *board, int maxDepth) {
 		if(count > 0) {
 			result.move = moves[0];
 		}
+		emitInfo(result);
 		return result;
 	}
-	for(int depth = 1; depth <= maxDepth; depth++) {
-		int score = 0;
-		bool pathDependent = false;
-		Move move = getMoveToDepth(board, depth, &score, &pathDependent);
-		if(move == MOVE_NONE) {
-			// Mate or stalemate at the root. The score is the terminal, not the initializer.
-			result.score = score;
-			result.depth = depth;
+	Move previousBest = MOVE_NONE;
+	long long iterMs = 0;
+	for(int depth = 1; depth <= limits.maxDepth; depth++) {
+		// The clock waits out depth 1. Stop is checked before every depth, so a
+		// stop that is already buffered does not have to wait for 2048 nodes.
+		if(depth > 1 && !clockHasRoom(nowMillis() - searchStartMs, iterMs)) {
 			break;
 		}
-		// The root window is not a table entry. A path-dependent score is still
-		// the score we report; storeScore already dropped it inside the tree.
-		result.move = move;
-		result.score = score;
+		if(pollStop != nullptr && pollStop()) {
+			if(result.depth == 0) {
+				Move moves[MAX_MOVES];
+				int count = collectLegal(board, moves, false, 0, MOVE_NONE);
+				if(count > 0) {
+					result.move = moves[0];
+				}
+				result.score = 0;
+				result.depth = depth;
+				emitInfo(result);
+			}
+			break;
+		}
+		enforceHard = useTime && depth > 1;
+		searchAborted = false;
+		long long iterStart = nowMillis();
+		DepthResult found = getMoveToDepth(board, depth, previousBest);
+		iterMs = nowMillis() - iterStart;
+		if(found.aborted) {
+			// A later depth keeps the finished result. Depth 1 has none yet.
+			if(result.depth == 0) {
+				result.move = found.move;
+				result.score = found.score;
+				result.depth = depth;
+				emitInfo(result);
+			}
+			break;
+		}
+		result.move = found.move;
+		result.score = found.score;
 		result.depth = depth;
+		emitInfo(result);
+		if(found.move == MOVE_NONE) {
+			break;
+		}
+		previousBest = found.move;
 	}
 	return result;
 }

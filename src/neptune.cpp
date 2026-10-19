@@ -1,6 +1,10 @@
+#include <cerrno>
 #include <iostream>
 #include <sstream>
+#include <string>
+#include <poll.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include "bitboard.h"
 #include "board.h"
@@ -114,6 +118,230 @@ std::string readFen(std::istringstream *ss, std::string *token, bool *sawMoves) 
 	return fen;
 }
 
+std::string inputBuffer;
+bool inputEof = false;
+bool inputBlocked = false;
+bool quitRequested = false;
+bool openEndedSearch = false;
+Brain *activeBrain = nullptr;
+Board *activeBoard = nullptr;
+
+bool takeLine(std::string *line) {
+	std::string::size_type pos = inputBuffer.find('\n');
+	if(pos == std::string::npos) {
+		return false;
+	}
+	*line = inputBuffer.substr(0, pos);
+	if(!line->empty() && (*line)[line->size() - 1] == '\r') {
+		line->pop_back();
+	}
+	inputBuffer.erase(0, pos + 1);
+	return true;
+}
+
+bool pullInput() {
+	struct pollfd pfd;
+	pfd.fd = STDIN_FILENO;
+	pfd.events = POLLIN;
+	int ready = poll(&pfd, 1, 0);
+	if(ready <= 0) {
+		return false;
+	}
+	if(pfd.revents & POLLIN) {
+		char tmp[4096];
+		ssize_t n = ::read(STDIN_FILENO, tmp, sizeof tmp);
+		if(n < 0) {
+			return false;
+		}
+		if(n == 0) {
+			inputEof = true;
+			return false;
+		}
+		inputBuffer.append(tmp, tmp + n);
+		return true;
+	}
+	if(pfd.revents & POLLHUP) {
+		inputEof = true;
+	}
+	return false;
+}
+
+bool readLine(std::string &line) {
+	while(!takeLine(&line)) {
+		if(inputEof) {
+			if(inputBuffer.empty()) {
+				return false;
+			}
+			line = inputBuffer;
+			inputBuffer.clear();
+			return true;
+		}
+		char tmp[4096];
+		ssize_t n = ::read(STDIN_FILENO, tmp, sizeof tmp);
+		if(n < 0) {
+			if(errno == EINTR) {
+				continue;
+			}
+			return false;
+		}
+		if(n == 0) {
+			inputEof = true;
+			continue;
+		}
+		inputBuffer.append(tmp, tmp + n);
+	}
+	inputBlocked = false;
+	return true;
+}
+
+// stop ends the search. quit ends an open-ended search. Anything else stays
+// buffered for the main loop, including quit after a depth or a clock.
+bool pollSearchInput() {
+	if(inputBlocked) {
+		return false;
+	}
+	while(true) {
+		std::string line;
+		if(!takeLine(&line)) {
+			if(inputEof) {
+				quitRequested = true;
+				return true;
+			}
+			if(!pullInput()) {
+				if(inputEof && inputBuffer.empty()) {
+					quitRequested = true;
+					return true;
+				}
+				return false;
+			}
+			continue;
+		}
+		std::istringstream ss(line);
+		std::string token;
+		if(!(ss >> token)) {
+			continue;
+		}
+		if(token == "isready") {
+			std::cout << "readyok" << std::endl;
+			continue;
+		}
+		if(token == "stop") {
+			return true;
+		}
+		if(token == "quit" && openEndedSearch) {
+			quitRequested = true;
+			return true;
+		}
+		inputBuffer.insert(0, line + "\n");
+		inputBlocked = true;
+		return false;
+	}
+}
+
+void reportInfo(SearchResult result, long long nodes, int elapsedMs) {
+	Move variation[64];
+	int variationLength = activeBrain->principalVariation(activeBoard, result.move, variation,
+		result.depth > 0 ? result.depth : 1);
+	std::cout << "info depth " << result.depth << " ";
+	if(Brain::isMateScore(result.score)) {
+		std::cout << "score mate " << Brain::mateMoves(result.score);
+	} else {
+		std::cout << "score cp " << result.score;
+	}
+	std::cout << " nodes " << nodes << " time " << elapsedMs << " pv";
+	for(int i = 0; i < variationLength; i++) {
+		std::cout << " " << moveToUci(variation[i]);
+	}
+	std::cout << std::endl;
+}
+
+SearchLimits parseGo(std::istringstream *ss, Color turn) {
+	bool depthSet = false;
+	int depth = 8;
+	bool infinite = false;
+	bool movetimeSet = false;
+	int movetime = 0;
+	bool wtimeSet = false;
+	bool btimeSet = false;
+	int wtime = 0;
+	int btime = 0;
+	int winc = 0;
+	int binc = 0;
+	bool movestogoSet = false;
+	int movestogo = 0;
+	std::string token;
+	while(*ss >> token) {
+		if(token == "depth") {
+			*ss >> depth;
+			depthSet = true;
+		} else if(token == "infinite") {
+			infinite = true;
+		} else if(token == "movetime") {
+			*ss >> movetime;
+			movetimeSet = true;
+		} else if(token == "wtime") {
+			*ss >> wtime;
+			wtimeSet = true;
+		} else if(token == "btime") {
+			*ss >> btime;
+			btimeSet = true;
+		} else if(token == "winc") {
+			*ss >> winc;
+		} else if(token == "binc") {
+			*ss >> binc;
+		} else if(token == "movestogo") {
+			*ss >> movestogo;
+			movestogoSet = true;
+		}
+	}
+	SearchLimits limits;
+	limits.useTime = false;
+	limits.softMs = 0;
+	limits.hardMs = 0;
+	limits.untilStop = false;
+	if(movetimeSet) {
+		limits.useTime = true;
+		limits.softMs = movetime;
+		limits.hardMs = movetime;
+	} else {
+		bool white = turn == WHITE;
+		bool hasClock = white ? wtimeSet : btimeSet;
+		if(hasClock) {
+			int remaining = white ? wtime : btime;
+			int inc = white ? winc : binc;
+			int moves = (movestogoSet && movestogo > 0) ? movestogo : 20;
+			limits.useTime = true;
+			if(remaining <= 0) {
+				limits.softMs = 0;
+				limits.hardMs = 0;
+			} else {
+				int usable = remaining > 50 ? remaining - 50 : remaining;
+				long long soft = (long long) remaining / moves + inc;
+				if(soft > usable) {
+					soft = usable;
+				}
+				long long hard = soft * 2;
+				if(hard > usable) {
+					hard = usable;
+				}
+				limits.softMs = (int) soft;
+				limits.hardMs = (int) hard;
+			}
+		}
+	}
+	if(depthSet) {
+		limits.maxDepth = depth;
+	} else if(infinite || limits.useTime) {
+		limits.maxDepth = Brain::MAX_DEPTH - 1;
+	} else {
+		limits.maxDepth = 8;
+	}
+	// A depth or a clock ends on its own. quit then belongs to the main loop.
+	// An open search would otherwise run to the depth cap.
+	limits.untilStop = infinite && !depthSet && !limits.useTime;
+	return limits;
+}
+
 unsigned long long millisecondsSinceEpoch = 0ULL;
 
 int elapsedMillis() {
@@ -135,7 +363,7 @@ int main() {
 
 	initBitboards();
 
-	while(std::getline(std::cin, line)) {
+	while(readLine(line)) {
 		std::istringstream ss(line);
 		if(!(ss >> token)) {
 			continue;
@@ -229,27 +457,17 @@ int main() {
 			}
 			std::cout << (ok ? "ok" : "fail") << std::endl;
 		} else if(token == "go") {
-			int depth = 8;
-			while(ss >> token) {
-				if(token == "depth") {
-					ss >> depth;
-				}
+			SearchLimits limits = parseGo(&ss, board.turn);
+			activeBrain = &brain;
+			activeBoard = &board;
+			quitRequested = false;
+			openEndedSearch = limits.untilStop;
+			SearchResult result = brain.getMove(&board, limits, pollSearchInput, reportInfo);
+			activeBrain = nullptr;
+			activeBoard = nullptr;
+			if(quitRequested) {
+				return 0;
 			}
-			SearchResult result = brain.getMove(&board, depth);
-			Move variation[64];
-			int variationLength = brain.principalVariation(&board, result.move, variation,
-				result.depth > 0 ? result.depth : 1);
-			std::cout << "info depth " << result.depth << " ";
-			if(Brain::isMateScore(result.score)) {
-				std::cout << "score mate " << Brain::mateMoves(result.score);
-			} else {
-				std::cout << "score cp " << result.score;
-			}
-			std::cout << " pv";
-			for(int i = 0; i < variationLength; i++) {
-				std::cout << " " << moveToUci(variation[i]);
-			}
-			std::cout << std::endl;
 			std::cout << "bestmove " << moveToUci(result.move) << std::endl;
 		} else if(token == "quit") {
 			return 0;
