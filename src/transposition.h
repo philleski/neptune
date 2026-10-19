@@ -11,7 +11,7 @@ enum TranspositionType {
 
 struct TranspositionEntry {
 	U64 hash;
-	float score;
+	int score;
 	unsigned short move;
 	unsigned char depth;
 	unsigned char type;
@@ -21,7 +21,7 @@ class TranspositionTable {
 public:
 	TranspositionTable();
 	void clear();
-	void put(U64 hash, int depth, float score, Move move, int type);
+	void put(U64 hash, int depth, int score, Move move, int type);
 	bool get(U64 hash, TranspositionEntry *entry) const;
 private:
 	static const int SIZE_BITS = 22;

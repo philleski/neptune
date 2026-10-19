@@ -239,7 +239,13 @@ int main() {
 			Move variation[64];
 			int variationLength = brain.principalVariation(&board, result.move, variation,
 				result.depth > 0 ? result.depth : 1);
-			std::cout << "info depth " << result.depth << " score cp " << (int) result.score << " pv";
+			std::cout << "info depth " << result.depth << " ";
+			if(Brain::isMateScore(result.score)) {
+				std::cout << "score mate " << Brain::mateMoves(result.score);
+			} else {
+				std::cout << "score cp " << result.score;
+			}
+			std::cout << " pv";
 			for(int i = 0; i < variationLength; i++) {
 				std::cout << " " << moveToUci(variation[i]);
 			}
