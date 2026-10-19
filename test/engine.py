@@ -24,7 +24,8 @@ class Out:
 
 
 def expect_info(info, name):
-    if not info.startswith('info ') or 'depth' not in info or 'score cp' not in info or ' pv' not in info:
+    has_score = 'score cp' in info or 'score mate' in info
+    if not info.startswith('info ') or 'depth' not in info or not has_score or ' pv' not in info:
         raise Exception('%s: info line missing fields: %s' % (name, info))
 
 
@@ -65,6 +66,29 @@ def expect_scored(out, name, move, score=None, score_min=None):
     if score_min is not None and value < score_min:
         raise Exception('%s: score %s, expected at least %s (%s)' % (name, value, score_min, got))
     print('%s: %s %s' % (name, got, value))
+
+
+def mate_of(info, name):
+    expect_info(info, name)
+    parts = info.split()
+    try:
+        return int(parts[parts.index('mate') + 1])
+    except (ValueError, IndexError):
+        raise Exception('%s: no mate score in %s' % (name, info))
+
+
+def expect_mate(out, name, move, moves):
+    info = out.next()
+    found = out.next()
+    got = mate_of(info, name)
+    if not found.startswith('bestmove '):
+        raise Exception('%s: expected bestmove, got %s' % (name, found))
+    played = found.split(' ')[1]
+    if played != move:
+        raise Exception('%s: expected %s, got %s (mate %s)' % (name, move, played, got))
+    if got != moves:
+        raise Exception('%s: mate %s, expected %s' % (name, got, moves))
+    print('%s: %s mate %s' % (name, played, got))
 
 
 def expect_some_move(out, name):
@@ -111,7 +135,17 @@ def main():
         'position startpos moves f2f3 e7e5 g2g4',
         'go depth 6',
         'ucinewgame',
+        # Same mate, far apart in the game. The score must not depend on fullmove.
+        'position fen rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq g3 0 1',
+        'go depth 6',
+        'ucinewgame',
+        'position fen rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq g3 0 40',
+        'go depth 6',
+        'ucinewgame',
         'position fen 4K3/7r/5p2/5k2/8/8/1r6/8 b - - 0 1',
+        'go depth 6',
+        'ucinewgame',
+        'position fen 4K3/7r/5p2/5k2/8/8/1r6/8 b - - 0 40',
         'go depth 6',
         'ucinewgame',
         # The queen is already on h4. Tactician's test reached this position by
@@ -202,8 +236,15 @@ def main():
         'go depth 3',
         # Mate in one still wins when the clock is already full.
         'ucinewgame',
+        'position fen 7k/8/6K1/8/8/8/8/R7 w - - 100 1',
+        'go depth 4',
+        'ucinewgame',
         'position fen 7k/8/6K1/8/8/8/8/R7 w - - 100 80',
         'go depth 4',
+        # Side to move is already checkmated.
+        'ucinewgame',
+        'position fen R6k/8/6K1/8/8/8/8/8 b - - 0 1',
+        'go depth 1',
         'ucinewgame',
         'position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1',
         'go depth 2',
@@ -233,8 +274,11 @@ def main():
         raise Exception('ucinewgame hash %s, startpos %s' % (fresh, start_hash))
     print('ucinewgame: ok')
 
-    expect_best(out, 'mate in one', 'd8h4')
-    expect_best(out, 'fastest mate', 'b2b8')
+    expect_mate(out, 'mate in one', 'd8h4', 1)
+    expect_mate(out, 'mate in one at fullmove 1', 'd8h4', 1)
+    expect_mate(out, 'mate in one at fullmove 40', 'd8h4', 1)
+    expect_mate(out, 'fastest mate', 'b2b8', 1)
+    expect_mate(out, 'fastest mate at fullmove 40', 'b2b8', 1)
     expect_best(out, 'fork', 'b5c7')
     expect_some_move(out, 'losing position')
     expect_some_move(out, 'table bounds')
@@ -316,7 +360,9 @@ def main():
 
     expect_scored(out, 'queen versus king', None, score_min=400)
     expect_scored(out, 'fifty-move draw', None, score=0)
-    expect_scored(out, 'mate before fifty-move claim', 'a1a8', score_min=100000)
+    expect_mate(out, 'mate before fifty-move claim at fullmove 1', 'a1a8', 1)
+    expect_mate(out, 'mate before fifty-move claim', 'a1a8', 1)
+    expect_mate(out, 'already checkmated', '0000', 0)
     expect_scored(out, 'king versus king', None, score=0)
     expect_scored(out, 'king and bishop versus king', None, score=0)
     expect_scored(out, 'twofold is not a draw', None, score_min=400)

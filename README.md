@@ -36,7 +36,7 @@ quit
 
 A position is either the starting position (`position startpos`) or a [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) string, the usual one-line description of a board (`position fen <fen>`). Moves are long algebraic, such as `e2e4`, with a promotion piece on the end (`e7e8q`). Each of those commands takes an optional `moves` list.
 
-`go` searches 8 plies by default. `go depth N` searches N plies. Neptune then prints an `info` line: depth, a score in centipawns, the line it expects (the principal variation), and then `bestmove`.
+`go` searches 8 plies by default. `go depth N` searches N plies. Neptune then prints an `info` line: depth, a score in centipawns (or `mate N` when the line is a forced mate), the line it expects (the principal variation), and then `bestmove`.
 
 Supported commands are `uci`, `isready`, `ucinewgame`, `position`, `go`, and `quit`.
 

@@ -1,5 +1,7 @@
 #include "brain.h"
 
+#include <cmath>
+
 Brain::Brain() {
 	unsetKillers();
 }
@@ -103,27 +105,61 @@ bool Brain::moveIsLegal(Board *board, Move move) {
 	return false;
 }
 
-void Brain::storeScore(U64 hash, int depth, float score, Move move, int type, bool pathDependent) {
+void Brain::storeScore(U64 hash, int depth, int score, Move move, int type, bool pathDependent) {
 	if(pathDependent) {
 		return;
 	}
 	transpositionTable.put(hash, depth, score, move, type);
 }
 
-float Brain::quiescentSearch(Board *board, float alpha, float beta, int target) {
-	// Missing king: loss, with a ply penalty so shorter mates score better.
+bool Brain::isMateScore(int score) {
+	return score > EVAL_CLAMP || score < -EVAL_CLAMP;
+}
+
+int Brain::mateMoves(int score) {
+	if(score > 0) {
+		return (MATE - score + 1) / 2;
+	}
+	return -(MATE + score) / 2;
+}
+
+int Brain::backup(int childScore) {
+	int score = -childScore;
+	// Mate distance is plies from this node. Stepping toward zero makes a
+	// mate one ply longer for the parent, so a shorter mate still scores higher.
+	if(score > EVAL_CLAMP) {
+		score--;
+	} else if(score < -EVAL_CLAMP) {
+		score++;
+	}
+	return score;
+}
+
+int Brain::leafScore(Board *board) {
+	float raw = evaluation.fitness(board);
+	if(raw >= EVAL_CLAMP) {
+		return EVAL_CLAMP;
+	}
+	if(raw <= -EVAL_CLAMP) {
+		return -EVAL_CLAMP;
+	}
+	return (int) std::lround(raw);
+}
+
+int Brain::quiescentSearch(Board *board, int alpha, int beta, int target) {
+	// Missing king is a loss at this node. Distance is not the game ply.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
-		return -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
+		return -MATE;
 	}
 	if(board->isDeadPosition()) {
 		return 0;
 	}
-	float standPat = evaluation.fitness(board);
-	if(standPat >= beta) {
-		return beta;
+	int bestScore = leafScore(board);
+	if(bestScore >= beta) {
+		return bestScore;
 	}
-	if(standPat > alpha) {
-		alpha = standPat;
+	if(bestScore > alpha) {
+		alpha = bestScore;
 	}
 	Move moves[MAX_MOVES];
 	int count = collectLegal(board, moves, true, 0, MOVE_NONE);
@@ -135,23 +171,26 @@ float Brain::quiescentSearch(Board *board, float alpha, float beta, int target) 
 			continue;
 		}
 		board->move(moves[i]);
-		float score = -quiescentSearch(board, -beta, -alpha, destination);
+		int score = backup(quiescentSearch(board, -beta, -alpha, destination));
 		board->unmove(moves[i]);
+		if(score > bestScore) {
+			bestScore = score;
+		}
 		if(score >= beta) {
-			return beta;
+			return score;
 		}
 		if(score > alpha) {
 			alpha = score;
 		}
 	}
-	return alpha;
+	return bestScore;
 }
 
-Brain::SearchScore Brain::alphabeta(Board *board, int depth, float alpha, float beta) {
-	// Missing king: loss, with a ply penalty so shorter mates score better.
+Brain::SearchScore Brain::alphabeta(Board *board, int depth, int alpha, int beta) {
+	// Missing king is a loss at this node. Distance is not the game ply.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
-		float loss = -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
-		return {loss, false};
+		storeScore(board->positionHash, depth, -MATE, MOVE_NONE, TT_PV, false);
+		return {-MATE, false};
 	}
 	// Repetition is path-dependent. Probe it before the table and do not store it.
 	if(board->isRepetition()) {
@@ -171,12 +210,12 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, float alpha, float 
 			Move moves[MAX_MOVES];
 			int count = collectLegal(board, moves, false, depth, MOVE_NONE);
 			if(count == 0) {
-				float loss = -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
-				return {loss, false};
+				storeScore(board->positionHash, depth, -MATE, MOVE_NONE, TT_PV, false);
+				return {-MATE, false};
 			}
 		}
-		float stand = quiescentSearch(board, alpha, beta, -1);
-		if(claimDraw && stand < 0) {
+		int stand = quiescentSearch(board, alpha, beta, -1);
+		if(claimDraw && stand < 0 && !isMateScore(stand)) {
 			return {0, true};
 		}
 		return {stand, false};
@@ -186,15 +225,24 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, float alpha, float 
 	Move tableMove = MOVE_NONE;
 	if(transpositionTable.get(board->positionHash, &entry)) {
 		// A stored score ignores the clock. At the claim limit, search instead.
-		if(!claimDraw && entry.depth == depth) {
+		if(!claimDraw && entry.depth >= depth) {
 			if(entry.type == TT_PV) {
 				return {entry.score, false};
 			}
-			if(entry.type == TT_CUT && entry.score > alpha) {
-				alpha = entry.score;
-			}
-			if(alpha >= beta) {
-				return {beta, false};
+			if(entry.type == TT_CUT) {
+				if(entry.score >= beta) {
+					return {entry.score, false};
+				}
+				if(entry.score > alpha) {
+					alpha = entry.score;
+				}
+			} else if(entry.type == TT_ALL) {
+				if(entry.score <= alpha) {
+					return {entry.score, false};
+				}
+				if(entry.score < beta) {
+					beta = entry.score;
+				}
 			}
 		}
 		tableMove = entry.move;
@@ -204,64 +252,78 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, float alpha, float 
 	int count = collectLegal(board, moves, false, depth, tableMove);
 	if(count == 0) {
 		if(moveGen.inCheck(board)) {
-			// Checkmate. The ply penalty prefers the shorter mate.
-			float loss = -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
-			return {loss, false};
+			storeScore(board->positionHash, depth, -MATE, MOVE_NONE, TT_PV, false);
+			return {-MATE, false};
 		}
+		storeScore(board->positionHash, depth, 0, MOVE_NONE, TT_PV, false);
 		return {0, false};
 	}
 	if(claimDraw && 0 >= beta) {
 		return {0, true};
 	}
+	int originalAlpha = alpha;
 	if(claimDraw && alpha < 0) {
 		alpha = 0;
 	}
 
-	int nodeType = TT_ALL;
+	int bestScore = -INF;
 	Move bestMove = MOVE_NONE;
-	// Until a move beats the claim, the floor of 0 depends on the path.
-	bool bestPathDependent = claimDraw;
+	bool bestPathDependent = true;
 	for(int i = 0; i < count; i++) {
 		board->move(moves[i]);
 		SearchScore child = alphabeta(board, depth - 1, -beta, -alpha);
 		board->unmove(moves[i]);
-		float score = -child.score;
-		if(score >= beta) {
-			storeScore(board->positionHash, depth, beta, moves[i], TT_CUT, child.pathDependent);
-			insertKiller(moves[i], depth);
-			return {beta, child.pathDependent};
-		}
-		if(score > alpha) {
-			nodeType = TT_PV;
+		int score = backup(child.score);
+		if(score > bestScore) {
+			bestScore = score;
 			bestMove = moves[i];
-			alpha = score;
 			bestPathDependent = child.pathDependent;
 		}
+		if(score >= beta) {
+			storeScore(board->positionHash, depth, score, moves[i], TT_CUT, child.pathDependent);
+			insertKiller(moves[i], depth);
+			return {score, child.pathDependent};
+		}
+		if(score > alpha) {
+			alpha = score;
+		}
 	}
-	storeScore(board->positionHash, depth, alpha, bestMove, nodeType, bestPathDependent);
-	return {alpha, bestPathDependent};
+	// Every move loses, and the side to move can take the draw instead.
+	if(claimDraw && bestScore < 0) {
+		return {0, true};
+	}
+	int nodeType = bestScore <= originalAlpha ? TT_ALL : TT_PV;
+	storeScore(board->positionHash, depth, bestScore, bestMove, nodeType, bestPathDependent);
+	return {bestScore, bestPathDependent};
 }
 
-Move Brain::getMoveToDepth(Board *board, int depth, float *score, bool *pathDependent) {
+Move Brain::getMoveToDepth(Board *board, int depth, int *score, bool *pathDependent) {
 	unsetKillers();
-	float alpha = -Evaluation::FITNESS_LARGE;
-	float beta = Evaluation::FITNESS_LARGE;
+	int alpha = -INF;
+	int beta = INF;
 	Move moves[MAX_MOVES];
 	int count = collectLegal(board, moves, false, depth, MOVE_NONE);
+	if(count == 0) {
+		*score = moveGen.inCheck(board) ? -MATE : 0;
+		*pathDependent = false;
+		return MOVE_NONE;
+	}
 	Move bestMove = MOVE_NONE;
+	int bestScore = -INF;
 	bool bestPathDependent = false;
 	for(int i = 0; i < count; i++) {
 		board->move(moves[i]);
 		SearchScore child = alphabeta(board, depth - 1, -beta, -alpha);
 		board->unmove(moves[i]);
-		float fitness = -child.score;
-		if(bestMove == MOVE_NONE || fitness > alpha) {
+		int fitness = backup(child.score);
+		if(bestMove == MOVE_NONE || fitness > bestScore) {
 			bestMove = moves[i];
+			bestScore = fitness;
 			alpha = fitness;
 			bestPathDependent = child.pathDependent;
 		}
 	}
-	*score = alpha;
+	*score = bestScore;
 	*pathDependent = bestPathDependent;
 	// The root window is not a table entry. Path-dependent child scores were
 	// already refused by storeScore.
@@ -289,17 +351,16 @@ SearchResult Brain::getMove(Board *board, int maxDepth) {
 		return result;
 	}
 	for(int depth = 1; depth <= maxDepth; depth++) {
-		float score = 0;
+		int score = 0;
 		bool pathDependent = false;
 		Move move = getMoveToDepth(board, depth, &score, &pathDependent);
 		if(move == MOVE_NONE) {
+			result.score = score;
+			result.depth = depth;
 			break;
 		}
 		// The root window is not a table entry. A path-dependent score is still
 		// the score we report; storeScore already dropped it inside the tree.
-		if(pathDependent) {
-			result.score = score;
-		}
 		result.move = move;
 		result.score = score;
 		result.depth = depth;
@@ -316,7 +377,9 @@ int Brain::principalVariation(Board *board, Move move, Move *out, int maxMoves) 
 	board->move(move);
 	while(count < maxMoves) {
 		TranspositionEntry entry;
-		if(!transpositionTable.get(board->positionHash, &entry) || entry.move == MOVE_NONE) {
+		// An all-node move orders the search. It is not part of the line.
+		if(!transpositionTable.get(board->positionHash, &entry) || entry.type != TT_PV
+				|| entry.move == MOVE_NONE) {
 			break;
 		}
 		Move next = entry.move;
