@@ -2,13 +2,13 @@
 
 Neptune is a [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) chess engine written in C++: alpha-beta search with a transposition table and a hand-tuned evaluation. Move generation is verified against the published perft suite and computes about 24 million leaf positions per second on a single core of an Apple M3 Max.
 
-The search looks a fixed number of plies (half-moves) ahead. It walks the tree of legal moves with alpha-beta pruning, tries captures and previously good moves first. At the horizon it keeps searching captures so it does not stop halfway through a trade. A transposition table remembers positions already searched. The score at a leaf is based on material, pawn structure, king safety, and the bishop pair. A threefold repetition, fifty moves with no pawn move or capture, and a position where mate is impossible are draws. Checkmate still wins when the fifty-move count is already full.
+The search looks a fixed number of plies (half-moves) ahead. It walks the tree of legal moves with alpha-beta pruning, tries captures and previously good moves first. At the horizon it keeps searching captures, answers a check, and plays a promotion so it does not stop halfway through a trade. A transposition table remembers positions already searched. The score at a leaf is based on material, pawn structure, king safety, and the bishop pair. A threefold repetition, fifty moves with no pawn move or capture, and a position where mate is impossible are draws. Checkmate still wins when the fifty-move count is already full.
 
 ## How it works
 
 A GUI or a script talks to Neptune over the UCI protocol. Neptune does not draw a board; it reads a position and calculates the best move.
 
-The search looks a fixed number of plies (half-moves) ahead. It walks the tree of legal moves with alpha-beta pruning and tries captures and previously good moves first. At the horizon it keeps searching captures so it does not stop halfway through a trade. A transposition table remembers positions already searched. The score at a leaf is based on material, pawn structure, king safety, and the bishop pair.
+The search looks a fixed number of plies (half-moves) ahead. It walks the tree of legal moves with alpha-beta pruning and tries captures and previously good moves first. At the horizon it keeps searching captures, answers a check, and plays a promotion so it does not stop halfway through a trade. A transposition table remembers positions already searched. The score at a leaf is based on material, pawn structure, king safety, and the bishop pair.
 
 ## Requirements
 

@@ -43,6 +43,7 @@ private:
 	static int backup(int childScore);
 	void storeScore(U64 hash, int depth, int score, Move move, int type, bool pathDependent);
 	int collectLegal(Board *board, Move *moves, bool capturesOnly, int depth, Move ttMove);
+	int collectTactical(Board *board, Move *moves);
 	void orderMoves(Move *moves, int count, Board *board, int depth, Move ttMove);
 	bool isKiller(Move move, int depth);
 	void insertKiller(Move move, int depth);

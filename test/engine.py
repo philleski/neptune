@@ -50,7 +50,7 @@ def score_of(info, name):
         raise Exception('%s: no score in %s' % (name, info))
 
 
-def expect_scored(out, name, move, score=None, score_min=None):
+def expect_scored(out, name, move, score=None, score_min=None, score_max=None):
     info = out.next()
     found = out.next()
     value = score_of(info, name)
@@ -65,6 +65,8 @@ def expect_scored(out, name, move, score=None, score_min=None):
         raise Exception('%s: score %s, expected %s (%s)' % (name, value, score, got))
     if score_min is not None and value < score_min:
         raise Exception('%s: score %s, expected at least %s (%s)' % (name, value, score_min, got))
+    if score_max is not None and value > score_max:
+        raise Exception('%s: score %s, expected at most %s (%s)' % (name, value, score_max, got))
     print('%s: %s %s' % (name, got, value))
 
 
@@ -258,6 +260,25 @@ def main():
         'ucinewgame',
         'position fen 4k3/8/8/8/8/8/8/3QK3 b - - 0 1 moves e8e7 d1d2 e7e8 d2d1 e8e7 d1d2 e7e8 d2d1',
         'go depth 2',
+        # Quiet mate, a seventh-rank pawn, and a stalemate are horizon scores.
+        'ucinewgame',
+        'position startpos moves f2f3 e7e5 g2g4',
+        'go depth 1',
+        'ucinewgame',
+        'position fen 7k/8/6K1/8/8/8/8/R7 w - - 0 1',
+        'go depth 1',
+        'ucinewgame',
+        'position fen 4k3/P7/8/8/8/8/8/4K3 b - - 0 1',
+        'go depth 1',
+        'ucinewgame',
+        'position fen k7/P7/2K5/8/8/8/8/8 w - - 0 1',
+        'go depth 1',
+        'ucinewgame',
+        'position startpos moves f2f3 e7e5 g2g4 d8h4',
+        'go depth 1',
+        'ucinewgame',
+        'position fen k7/P7/1K6/8/8/8/8/8 b - - 0 1',
+        'go depth 1',
     ]
 
     out = Out(run(commands))
@@ -367,6 +388,12 @@ def main():
     expect_scored(out, 'king and bishop versus king', None, score=0)
     expect_scored(out, 'twofold is not a draw', None, score_min=400)
     expect_scored(out, 'threefold repetition', None, score=0)
+    expect_mate(out, 'horizon mate in one', 'd8h4', 1)
+    expect_mate(out, 'horizon rook mate', 'a1a8', 1)
+    expect_scored(out, 'horizon promotion', None, score_max=-500)
+    expect_scored(out, 'horizon stalemate', None, score=0)
+    expect_mate(out, 'root checkmate', '0000', 0)
+    expect_scored(out, 'root stalemate', '0000', score=0)
 
     out.done()
 
