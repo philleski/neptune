@@ -2,7 +2,7 @@
 
 Neptune is a chess engine. A GUI or a script talks to it over the [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) protocol. Neptune does not draw a board; it reads a position and calculates the best move.
 
-The search looks a fixed number of plies (half-moves) ahead. It walks the tree of legal moves with alpha-beta pruning, tries captures and previously good moves first. At the horizon it keeps searching captures so it does not stop halfway through a trade. A transposition table remembers positions already searched. The score at a leaf is based on material, pawn structure, king safety, and the bishop pair.
+The search looks a fixed number of plies (half-moves) ahead. It walks the tree of legal moves with alpha-beta pruning, tries captures and previously good moves first. At the horizon it keeps searching captures so it does not stop halfway through a trade. A transposition table remembers positions already searched. The score at a leaf is based on material, pawn structure, king safety, and the bishop pair. A threefold repetition, fifty moves with no pawn move or capture, and a position where mate is impossible are draws. Checkmate still wins when the fifty-move count is already full.
 
 ## Build
 

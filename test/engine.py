@@ -40,6 +40,33 @@ def expect_best(out, name, move):
     print(name + ': ' + got)
 
 
+def score_of(info, name):
+    expect_info(info, name)
+    parts = info.split()
+    try:
+        return int(parts[parts.index('cp') + 1])
+    except (ValueError, IndexError):
+        raise Exception('%s: no score in %s' % (name, info))
+
+
+def expect_scored(out, name, move, score=None, score_min=None):
+    info = out.next()
+    found = out.next()
+    value = score_of(info, name)
+    if not found.startswith('bestmove '):
+        raise Exception('%s: expected bestmove, got %s' % (name, found))
+    got = found.split()[1]
+    if move is not None and got != move:
+        raise Exception('%s: expected %s, got %s (score %s)' % (name, move, got, value))
+    if move is None and len(got) < 4:
+        raise Exception('%s returned no move: %s' % (name, got))
+    if score is not None and value != score:
+        raise Exception('%s: score %s, expected %s (%s)' % (name, value, score, got))
+    if score_min is not None and value < score_min:
+        raise Exception('%s: score %s, expected at least %s (%s)' % (name, value, score_min, got))
+    print('%s: %s %s' % (name, got, value))
+
+
 def expect_some_move(out, name):
     info = out.next()
     found = out.next()
@@ -165,6 +192,31 @@ def main():
         '_hash',
         'position fen Q3k3/8/8/8/8/8/8/4K3 b - - 0 1',
         '_hash',
+        # Queen versus king. At clock 0 this is a win. At 99 every move is quiet,
+        # the reply can claim the fifty-move draw, and the score is 0.
+        'ucinewgame',
+        'position fen 8/8/8/7k/8/8/Q7/K7 w - - 0 60',
+        'go depth 3',
+        'ucinewgame',
+        'position fen 8/8/8/7k/8/8/Q7/K7 w - - 99 60',
+        'go depth 3',
+        # Mate in one still wins when the clock is already full.
+        'ucinewgame',
+        'position fen 7k/8/6K1/8/8/8/8/R7 w - - 100 80',
+        'go depth 4',
+        'ucinewgame',
+        'position fen 4k3/8/8/8/8/8/8/4K3 w - - 0 1',
+        'go depth 2',
+        'ucinewgame',
+        'position fen 4k3/8/8/8/8/8/8/4KB2 w - - 0 1',
+        'go depth 2',
+        # Two visits are not a draw. The third visit of this queen-up position is.
+        'ucinewgame',
+        'position fen 4k3/8/8/8/8/8/8/3QK3 b - - 0 1 moves e8e7 d1d2 e7e8 d2d1 e8e7 d1d2 e7e8',
+        'go depth 3',
+        'ucinewgame',
+        'position fen 4k3/8/8/8/8/8/8/3QK3 b - - 0 1 moves e8e7 d1d2 e7e8 d2d1 e8e7 d1d2 e7e8 d2d1',
+        'go depth 2',
     ]
 
     out = Out(run(commands))
@@ -261,6 +313,14 @@ def main():
     if promoted != promoted_fen:
         raise Exception('promotion hash mismatch %s %s' % (promoted, promoted_fen))
     print('promotion move: ok')
+
+    expect_scored(out, 'queen versus king', None, score_min=400)
+    expect_scored(out, 'fifty-move draw', None, score=0)
+    expect_scored(out, 'mate before fifty-move claim', 'a1a8', score_min=100000)
+    expect_scored(out, 'king versus king', None, score=0)
+    expect_scored(out, 'king and bishop versus king', None, score=0)
+    expect_scored(out, 'twofold is not a draw', None, score_min=400)
+    expect_scored(out, 'threefold repetition', None, score=0)
 
     out.done()
 

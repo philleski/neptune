@@ -12,6 +12,7 @@ struct Undo {
 	unsigned int castleRights;
 	U64 positionHash;
 	U64 positionHashPawnsKings;
+	int halfmoveClock;
 };
 
 class Board {
@@ -23,6 +24,10 @@ public:
 	bool hasCastleRight(CastleRight castleRight);
 	bool isCapture(Move move);
 	bool hashesMatchRecompute();
+	// Threefold: this key already occurred twice since historyPly, within the clock.
+	bool isRepetition();
+	// Mate cannot occur. King versus king, or one minor, or same-color bishops.
+	bool isDeadPosition();
 
 	Bitboard bitboards[PIECE_NONE];
 	Bitboard playerBitboards[2];
@@ -32,6 +37,8 @@ public:
 	// Bits 0-3 are used according to the enum CastleRight
 	unsigned int castleRights;
 	int ply;
+	// Plies since the last pawn move or capture. Not part of the Zobrist key.
+	int halfmoveClock;
 	U64 positionHash;
 	U64 positionHashPawnsKings;
 private:
@@ -55,6 +62,8 @@ private:
 	inline void setCastleRight(CastleRight castleRight);
 	inline void clearCastleRight(CastleRight castleRight);
 
+	// undoHistory below this ply is empty. setPosition does not replay earlier moves.
+	int historyPly;
 	Undo undoHistory[MAX_PLIES];
 };
 

@@ -24,9 +24,16 @@ public:
 private:
 	static const int MAX_DEPTH = 64;
 
-	Move getMoveToDepth(Board *board, int depth, float *score);
-	float alphabeta(Board *board, int depth, float alpha, float beta);
+	// A repetition or a fifty-move claim depends on the path, so it must not be stored.
+	struct SearchScore {
+		float score;
+		bool pathDependent;
+	};
+
+	Move getMoveToDepth(Board *board, int depth, float *score, bool *pathDependent);
+	SearchScore alphabeta(Board *board, int depth, float alpha, float beta);
 	float quiescentSearch(Board *board, float alpha, float beta, int target);
+	void storeScore(U64 hash, int depth, float score, Move move, int type, bool pathDependent);
 	int collectLegal(Board *board, Move *moves, bool capturesOnly, int depth, Move ttMove);
 	void orderMoves(Move *moves, int count, Board *board, int depth, Move ttMove);
 	bool isKiller(Move move, int depth);
