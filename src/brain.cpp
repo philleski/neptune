@@ -79,6 +79,20 @@ void Brain::orderMoves(Move *moves, int count, Board *board, int depth, Move ttM
 	}
 }
 
+static float mateLoss(Board *board) {
+	return -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
+}
+
+// A mate loss sits near FITNESS_LARGE. Static eval stays well below half of that.
+static bool isMateLoss(float score) {
+	return score <= -Evaluation::FITNESS_LARGE / 2;
+}
+
+static bool isCaptureMove(Board *board, Move move) {
+	// En passant leaves the destination empty, so isCapture misses it.
+	return board->isCapture(move) || IS_ENPASSANT(move);
+}
+
 int Brain::collectLegal(Board *board, Move *moves, bool capturesOnly, int depth, Move ttMove) {
 	Move pseudo[MAX_MOVES];
 	Move *end = moveGen.generateMoves(board, pseudo, capturesOnly);
@@ -89,6 +103,24 @@ int Brain::collectLegal(Board *board, Move *moves, bool capturesOnly, int depth,
 		}
 	}
 	orderMoves(moves, count, board, depth, ttMove);
+	return count;
+}
+
+int Brain::collectTactical(Board *board, Move *moves) {
+	// Captures, en passant, and every promotion. Quiets stay out of the horizon.
+	Move pseudo[MAX_MOVES];
+	Move *end = moveGen.generateMoves(board, pseudo, false);
+	int count = 0;
+	for(Move *current = pseudo; current != end; current++) {
+		Move move = *current;
+		if(!isCaptureMove(board, move) && !IS_PROMOTION(move)) {
+			continue;
+		}
+		if(moveGen.isLegal(board, move)) {
+			moves[count++] = move;
+		}
+	}
+	orderMoves(moves, count, board, 0, MOVE_NONE);
 	return count;
 }
 
@@ -113,30 +145,54 @@ void Brain::storeScore(U64 hash, int depth, float score, Move move, int type, bo
 float Brain::quiescentSearch(Board *board, float alpha, float beta, int target) {
 	// Missing king: loss, with a ply penalty so shorter mates score better.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
-		return -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
+		return mateLoss(board);
 	}
+	// A dead position cannot be mate. Recognize it before the check test.
 	if(board->isDeadPosition()) {
 		return 0;
 	}
-	float standPat = evaluation.fitness(board);
-	if(standPat >= beta) {
-		return beta;
-	}
-	if(standPat > alpha) {
-		alpha = standPat;
-	}
+	bool inCheck = moveGen.inCheck(board);
 	Move moves[MAX_MOVES];
-	int count = collectLegal(board, moves, true, 0, MOVE_NONE);
+	int count;
+	if(inCheck) {
+		// A check is a forced move. Stand-pat would score an illegal pass.
+		count = collectLegal(board, moves, false, 0, MOVE_NONE);
+		if(count == 0) {
+			return mateLoss(board);
+		}
+	} else {
+		count = collectTactical(board, moves);
+		if(count == 0) {
+			// No capture and no promotion. An empty legal list is stalemate.
+			// Checked before stand-pat, which would fail high on a positive eval.
+			Move any[MAX_MOVES];
+			if(collectLegal(board, any, false, 0, MOVE_NONE) == 0) {
+				return 0;
+			}
+		}
+		float standPat = evaluation.fitness(board);
+		if(standPat >= beta) {
+			return beta;
+		}
+		if(standPat > alpha) {
+			alpha = standPat;
+		}
+	}
 	for(int i = 0; i < count; i++) {
-		int destination = DEST(moves[i]);
+		Move move = moves[i];
+		bool capture = isCaptureMove(board, move);
 		// Recaptures only, and only on the square of the capture just made.
-		// target == -1 accepts any capture.
-		if(target != -1 && destination != target) {
+		// A quiet promotion is not a recapture, so the square filter leaves it in.
+		// target == -1 accepts any capture. In check the filter does not apply.
+		if(!inCheck && capture && target != -1 && (int)DEST(move) != target) {
 			continue;
 		}
-		board->move(moves[i]);
-		float score = -quiescentSearch(board, -beta, -alpha, destination);
-		board->unmove(moves[i]);
+		// A capture continues the recapture chain. A quiet move did not take
+		// anything, so the reply may capture on any square.
+		int childTarget = capture ? (int)DEST(move) : -1;
+		board->move(move);
+		float score = -quiescentSearch(board, -beta, -alpha, childTarget);
+		board->unmove(move);
 		if(score >= beta) {
 			return beta;
 		}
@@ -150,8 +206,7 @@ float Brain::quiescentSearch(Board *board, float alpha, float beta, int target) 
 Brain::SearchScore Brain::alphabeta(Board *board, int depth, float alpha, float beta) {
 	// Missing king: loss, with a ply penalty so shorter mates score better.
 	if(board->bitboards[PIECE(board->turn, KING)] == BB_EMPTY) {
-		float loss = -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
-		return {loss, false};
+		return {mateLoss(board), false};
 	}
 	// Repetition is path-dependent. Probe it before the table and do not store it.
 	if(board->isRepetition()) {
@@ -166,17 +221,9 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, float alpha, float 
 	// A mating move still wins, and a checkmate already on the board is still a loss.
 	bool claimDraw = board->halfmoveClock >= 100;
 	if(depth == 0) {
-		// The horizon does not otherwise notice mate. A claim must not hide one.
-		if(claimDraw && moveGen.inCheck(board)) {
-			Move moves[MAX_MOVES];
-			int count = collectLegal(board, moves, false, depth, MOVE_NONE);
-			if(count == 0) {
-				float loss = -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
-				return {loss, false};
-			}
-		}
 		float stand = quiescentSearch(board, alpha, beta, -1);
-		if(claimDraw && stand < 0) {
+		// The claim draws a lost horizon. A mate loss stays a loss.
+		if(claimDraw && stand < 0 && !isMateLoss(stand)) {
 			return {0, true};
 		}
 		return {stand, false};
@@ -205,8 +252,7 @@ Brain::SearchScore Brain::alphabeta(Board *board, int depth, float alpha, float 
 	if(count == 0) {
 		if(moveGen.inCheck(board)) {
 			// Checkmate. The ply penalty prefers the shorter mate.
-			float loss = -Evaluation::FITNESS_LARGE + board->ply * Evaluation::FITNESS_MOVE;
-			return {loss, false};
+			return {mateLoss(board), false};
 		}
 		return {0, false};
 	}
@@ -248,6 +294,11 @@ Move Brain::getMoveToDepth(Board *board, int depth, float *score, bool *pathDepe
 	float beta = Evaluation::FITNESS_LARGE;
 	Move moves[MAX_MOVES];
 	int count = collectLegal(board, moves, false, depth, MOVE_NONE);
+	if(count == 0) {
+		*pathDependent = false;
+		*score = moveGen.inCheck(board) ? mateLoss(board) : 0;
+		return MOVE_NONE;
+	}
 	Move bestMove = MOVE_NONE;
 	bool bestPathDependent = false;
 	for(int i = 0; i < count; i++) {
@@ -293,6 +344,8 @@ SearchResult Brain::getMove(Board *board, int maxDepth) {
 		bool pathDependent = false;
 		Move move = getMoveToDepth(board, depth, &score, &pathDependent);
 		if(move == MOVE_NONE) {
+			// Mate or stalemate at the root. The score is the terminal, not the initializer.
+			result.score = score;
 			break;
 		}
 		// The root window is not a table entry. A path-dependent score is still
