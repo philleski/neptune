@@ -41,7 +41,7 @@ int perft(Board *board, int depth, MoveGen *moveGen) {
 
 std::string moveToUci(Move move) {
 	if(move == MOVE_NONE) {
-		return "0000";
+		return "(none)";
 	}
 	int source = SOURCE(move);
 	int destination = DEST(move);
@@ -75,6 +75,9 @@ Move findUciMove(Board *board, MoveGen *moveGen, const std::string &text) {
 		return MOVE_NONE;
 	}
 	char promotion = text.size() >= 5 ? text[4] : '\0';
+	if(promotion >= 'A' && promotion <= 'Z') {
+		promotion = (char) (promotion - 'A' + 'a');
+	}
 	Move moves[MAX_MOVES];
 	Move *end = moveGen->generateMoves(board, moves);
 	for(Move *current = moves; current != end; current++) {

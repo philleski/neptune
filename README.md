@@ -34,9 +34,9 @@ go depth 4
 quit
 ```
 
-A position is either the starting position (`position startpos`) or a [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) string, the usual one-line description of a board (`position fen <fen>`). Moves are long algebraic, such as `e2e4`, with a promotion piece on the end (`e7e8q`). Each of those commands takes an optional `moves` list.
+A position is either the starting position (`position startpos`) or a [FEN](https://en.wikipedia.org/wiki/Forsyth%E2%80%93Edwards_Notation) string, the usual one-line description of a board (`position fen <fen>`). Moves are long algebraic, such as `e2e4`, with a promotion piece on the end (`e7e8q` or `e7e8Q`). Each of those commands takes an optional `moves` list. Printed moves use a lowercase promotion piece.
 
-`go` searches 8 plies by default. `go depth N` searches N plies. `go infinite` searches until `stop`. A clock (`wtime` and `btime`, with `winc`, `binc`, and `movestogo`) or `movetime` searches until the time for the move runs out. After each finished depth Neptune prints an `info` line: depth, a score in centipawns (or `mate N` when the line is a forced mate), the node count, the time in milliseconds, and the line it expects (the principal variation). Then it prints `bestmove`.
+`go` searches 8 plies by default. `go depth N` searches N plies. `go infinite` searches until `stop`. A clock (`wtime` and `btime`, with `winc`, `binc`, and `movestogo`) or `movetime` searches until the time for the move runs out. After each finished depth Neptune prints an `info` line: depth, a score in centipawns (or `mate N` when the line is a forced mate), the node count, the time in milliseconds, and the line it expects (the principal variation). Then it prints `bestmove`. A position with no legal move prints `bestmove (none)`.
 
 Supported commands are `uci`, `isready`, `ucinewgame`, `setoption`, `position`, `go`, `stop`, and `quit`. `Hash` is the transposition table in megabytes (default 64), `Threads` is 1, and `EvalFile` remembers a weight-file path while the hand-written eval still scores the leaf.
 
