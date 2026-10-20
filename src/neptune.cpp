@@ -1,4 +1,7 @@
+#include <cctype>
 #include <cerrno>
+#include <climits>
+#include <cstdlib>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -342,6 +345,129 @@ SearchLimits parseGo(std::istringstream *ss, Color turn) {
 	return limits;
 }
 
+const int HASH_DEFAULT = 64;
+const int HASH_MIN = 1;
+const int HASH_MAX = 1024;
+
+static bool sameOption(const std::string &left, const std::string &right) {
+	if(left.size() != right.size()) {
+		return false;
+	}
+	for(std::string::size_type i = 0; i < left.size(); i++) {
+		unsigned char a = (unsigned char) left[i];
+		unsigned char b = (unsigned char) right[i];
+		if(std::tolower(a) != std::tolower(b)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static std::string trim(const std::string &text) {
+	std::string::size_type start = 0;
+	while(start < text.size() && std::isspace((unsigned char) text[start])) {
+		start++;
+	}
+	std::string::size_type end = text.size();
+	while(end > start && std::isspace((unsigned char) text[end - 1])) {
+		end--;
+	}
+	return text.substr(start, end - start);
+}
+
+// The whole token has to be an integer. "16abc" is not a spin value.
+static bool parseSpin(const std::string &text, int *out) {
+	if(text.empty()) {
+		return false;
+	}
+	errno = 0;
+	char *end = nullptr;
+	long parsed = std::strtol(text.c_str(), &end, 10);
+	if(end == text.c_str() || *end != '\0' || errno == ERANGE) {
+		return false;
+	}
+	if(parsed > INT_MAX || parsed < INT_MIN) {
+		return false;
+	}
+	*out = (int) parsed;
+	return true;
+}
+
+static int clampHashMegabytes(int megabytes) {
+	if(megabytes < HASH_MIN) {
+		return HASH_MIN;
+	}
+	if(megabytes > HASH_MAX) {
+		return HASH_MAX;
+	}
+	return megabytes;
+}
+
+// Applied while the engine is waiting. A setoption during go stays buffered
+// until bestmove, which is where the main loop reads it.
+static void applySetOption(std::istringstream *ss, Brain *brain, int *hashMb, int *threads,
+		std::string *evalFile) {
+	std::string token;
+	if(!(*ss >> token) || token != "name") {
+		return;
+	}
+	std::string name;
+	bool sawValue = false;
+	while(*ss >> token) {
+		if(token == "value") {
+			sawValue = true;
+			break;
+		}
+		if(!name.empty()) {
+			name += ' ';
+		}
+		name += token;
+	}
+	if(name.empty()) {
+		return;
+	}
+	std::string value;
+	if(sawValue) {
+		std::string rest;
+		std::getline(*ss, rest);
+		value = trim(rest);
+	}
+	if(sameOption(name, "Hash")) {
+		int megabytes = 0;
+		if(!parseSpin(value, &megabytes)) {
+			return;
+		}
+		*hashMb = clampHashMegabytes(megabytes);
+		brain->setHashMegabytes(*hashMb);
+	} else if(sameOption(name, "Threads")) {
+		int requested = 0;
+		if(!parseSpin(value, &requested)) {
+			return;
+		}
+		// One thread owns the board. Any integer is accepted as that one thread.
+		if(requested < 1 || requested > 1) {
+			requested = 1;
+		}
+		*threads = requested;
+	} else if(sameOption(name, "EvalFile")) {
+		if(value.empty() || value == "<empty>") {
+			evalFile->clear();
+		} else {
+			*evalFile = value;
+		}
+	}
+}
+
+static void printOption(const std::string &name, int hashMb, int threads, const std::string &evalFile) {
+	if(sameOption(name, "Hash")) {
+		std::cout << hashMb << std::endl;
+	} else if(sameOption(name, "Threads")) {
+		std::cout << threads << std::endl;
+	} else if(sameOption(name, "EvalFile")) {
+		std::cout << (evalFile.empty() ? "<empty>" : evalFile) << std::endl;
+	}
+}
+
 unsigned long long millisecondsSinceEpoch = 0ULL;
 
 int elapsedMillis() {
@@ -359,6 +485,9 @@ int main() {
 	Board board = Board();
 	Brain brain = Brain();
 	MoveGen moveGen = MoveGen();
+	int hashMb = HASH_DEFAULT;
+	int threads = 1;
+	std::string evalFile;
 	std::string line, token;
 
 	initBitboards();
@@ -371,7 +500,13 @@ int main() {
 		if(token == "uci") {
 			std::cout << "id name Neptune" << std::endl;
 			std::cout << "id author Phil Leszczynski" << std::endl;
+			std::cout << "option name Hash type spin default " << HASH_DEFAULT
+				<< " min " << HASH_MIN << " max " << HASH_MAX << std::endl;
+			std::cout << "option name Threads type spin default 1 min 1 max 1" << std::endl;
+			std::cout << "option name EvalFile type string default <empty>" << std::endl;
 			std::cout << "uciok" << std::endl;
+		} else if(token == "setoption") {
+			applySetOption(&ss, &brain, &hashMb, &threads, &evalFile);
 		} else if(token == "isready") {
 			std::cout << "readyok" << std::endl;
 		} else if(token == "ucinewgame") {
@@ -433,6 +568,12 @@ int main() {
 			}
 			board.setPosition(fen);
 			std::cout << brain.endgameFraction(&board) << std::endl;
+		} else if(token == "_tt") {
+			std::cout << brain.transpositionEntries() << std::endl;
+		} else if(token == "_option") {
+			if(ss >> token) {
+				printOption(token, hashMb, threads, evalFile);
+			}
 		} else if(token == "_hash") {
 			std::cout << std::hex << board.positionHash << " " << board.positionHashPawnsKings
 				<< std::dec << std::endl;

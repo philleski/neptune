@@ -308,6 +308,9 @@ def main():
 
     expect_line(out, 'id name Neptune', 'uci')
     expect_line(out, 'id author Phil Leszczynski', 'uci')
+    expect_line(out, 'option name Hash type spin default 64 min 1 max 1024', 'uci')
+    expect_line(out, 'option name Threads type spin default 1 min 1 max 1', 'uci')
+    expect_line(out, 'option name EvalFile type string default <empty>', 'uci')
     expect_line(out, 'uciok', 'uci')
     expect_line(out, 'readyok', 'isready')
     print('uci handshake: ok')
@@ -425,6 +428,7 @@ def main():
         raise Exception('eof output: %s' % eof_lines)
     print('eof: ok')
 
+    options()
     time_control()
 
 
@@ -441,6 +445,87 @@ def search_lines(lines, name):
     if not infos or len(bests) != 1:
         raise Exception('%s: expected info and one bestmove, got %s' % (name, lines))
     return infos[-1], bests[0]
+
+
+def options():
+    start = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    lines = run([
+        '_tt',
+        'setoption name Hash value 64',
+        '_tt',
+        'setoption name hash value 1',
+        '_tt',
+        'setoption name hash value 16',
+        '_tt',
+        'setoption name Hash value lots',
+        '_option Hash',
+        '_tt',
+        'setoption name hash value 3',
+        '_option Hash',
+        '_tt',
+        'setoption name Hash value 0',
+        '_option Hash',
+        '_tt',
+        'setoption name Hash value 100000',
+        '_option Hash',
+        '_tt',
+        'setoption name Threads value 4',
+        'ucinewgame',
+        'position startpos moves f2f3 e7e5 g2g4',
+        'go depth 6',
+        '_option Threads',
+        '_eval ' + start,
+        'setoption name EvalFile value nets/my net.nnue',
+        '_option EvalFile',
+        '_eval ' + start,
+        'setoption name EvalFile value <empty>',
+        '_option EvalFile',
+        'setoption name Ponder value true',
+        'isready',
+    ])
+    expected = [
+        '4194304',
+        '4194304',
+        '65536',
+        '1048576',
+        '16',
+        '1048576',
+        '3',
+        '131072',
+        '1',
+        '65536',
+        '1024',
+        '67108864',
+    ]
+    if lines[:len(expected)] != expected:
+        raise Exception('options: expected %s, got %s' % (expected, lines[:len(expected)]))
+    i = len(expected)
+    info = None
+    while i < len(lines) and lines[i].startswith('info '):
+        info = lines[i]
+        i += 1
+    if info is None or i >= len(lines) or not lines[i].startswith('bestmove '):
+        raise Exception('options: expected a search, got %s' % lines[i:])
+    got = lines[i].split()[1]
+    if got != 'd8h4':
+        raise Exception('threads: expected d8h4, got %s' % got)
+    i += 1
+    if i >= len(lines) or lines[i] != '1':
+        raise Exception('threads: expected 1, got %s' % lines[i:])
+    i += 1
+    if i + 2 >= len(lines):
+        raise Exception('eval file: unexpected end %s' % lines[i:])
+    before = lines[i]
+    i += 1
+    if lines[i] != 'nets/my net.nnue':
+        raise Exception('eval file: expected path, got %s' % lines[i])
+    i += 1
+    if lines[i] != before:
+        raise Exception('eval file changed the score %s %s' % (before, lines[i]))
+    i += 1
+    if lines[i:] != ['<empty>', 'readyok']:
+        raise Exception('options tail: %s' % lines[i:])
+    print('options: ok')
 
 
 def time_control():

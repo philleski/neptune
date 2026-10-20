@@ -27,6 +27,14 @@ void Brain::clear() {
 	unsetKillers();
 }
 
+void Brain::setHashMegabytes(int megabytes) {
+	transpositionTable.resize(megabytes);
+}
+
+int Brain::transpositionEntries() const {
+	return transpositionTable.entries();
+}
+
 float Brain::evaluate(Board *board) {
 	return evaluation.fitness(board);
 }
