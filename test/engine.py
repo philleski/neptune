@@ -82,7 +82,7 @@ def expect_scored(out, name, move, score=None, score_min=None, score_max=None):
     got = found.split()[1]
     if move is not None and got != move:
         raise Exception('%s: expected %s, got %s (score %s)' % (name, move, got, value))
-    if move is None and len(got) < 4:
+    if move is None and (len(got) < 4 or got == '(none)'):
         raise Exception('%s returned no move: %s' % (name, got))
     if score is not None and value != score:
         raise Exception('%s: score %s, expected %s (%s)' % (name, value, score, got))
@@ -117,13 +117,20 @@ def expect_mate(out, name, move, moves, depth=None):
     print('%s: %s mate %s' % (name, played, got))
 
 
+def expect_hashes(out, name, count):
+    hashes = [out.next() for _ in range(count)]
+    if any(item != hashes[0] for item in hashes):
+        raise Exception('%s hash mismatch %s' % (name, hashes))
+    print(name + ': ok')
+
+
 def expect_some_move(out, name):
     info, found = last_search(out, name)
     expect_info(info, name)
     if not found.startswith('bestmove '):
         raise Exception('%s: expected bestmove, got %s' % (name, found))
     move = found.split(' ')[1]
-    if len(move) < 4:
+    if len(move) < 4 or move == '(none)':
         raise Exception('%s returned no move: %s' % (name, move))
     print(name + ': ' + move)
 
@@ -247,9 +254,47 @@ def main():
         '_hash',
         'position fen r3k2r/8/8/8/8/8/8/R4RK1 b kq - 0 1',
         '_hash',
+        'position fen 4k3/P7/8/8/8/8/8/4K3 w - - 0 1 moves a7a8Q',
+        '_hash',
         'position fen 4k3/P7/8/8/8/8/8/4K3 w - - 0 1 moves a7a8q',
         '_hash',
         'position fen Q3k3/8/8/8/8/8/8/4K3 b - - 0 1',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8Q',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8q',
+        '_hash',
+        'position fen k3Q3/8/8/8/8/8/8/4K3 b - - 0 1',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8R',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8r',
+        '_hash',
+        'position fen k3R3/8/8/8/8/8/8/4K3 b - - 0 1',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8B',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8b',
+        '_hash',
+        'position fen k3B3/8/8/8/8/8/8/4K3 b - - 0 1',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8N',
+        '_hash',
+        'position fen k7/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7e8n',
+        '_hash',
+        'position fen k3N3/8/8/8/8/8/8/4K3 b - - 0 1',
+        '_hash',
+        'position fen k2r4/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7d8Q',
+        '_hash',
+        'position fen k2r4/4P3/8/8/8/8/8/4K3 w - - 0 1 moves e7d8q',
+        '_hash',
+        'position fen k2Q4/8/8/8/8/8/8/4K3 b - - 0 1',
+        '_hash',
+        'position fen 4k3/8/8/8/8/8/4p3/7K b - - 0 1 moves e2e1Q',
+        '_hash',
+        'position fen 4k3/8/8/8/8/8/4p3/7K b - - 0 1 moves e2e1q',
+        '_hash',
+        'position fen 4k3/8/8/8/8/8/8/4q2K w - - 0 2',
         '_hash',
         # Queen versus king. At clock 0 this is a win. At 99 every move is quiet,
         # the reply can claim the fifty-move draw, and the score is 0.
@@ -400,16 +445,19 @@ def main():
         raise Exception('castle hash mismatch %s %s' % (castled, castled_fen))
     print('castling move: ok')
 
-    promoted, promoted_fen = out.next(), out.next()
-    if promoted != promoted_fen:
-        raise Exception('promotion hash mismatch %s %s' % (promoted, promoted_fen))
-    print('promotion move: ok')
+    expect_hashes(out, 'promotion move', 3)
+    expect_hashes(out, 'promotion e7e8Q', 3)
+    expect_hashes(out, 'promotion e7e8R', 3)
+    expect_hashes(out, 'promotion e7e8B', 3)
+    expect_hashes(out, 'promotion e7e8N', 3)
+    expect_hashes(out, 'promotion e7d8Q', 3)
+    expect_hashes(out, 'promotion e2e1Q', 3)
 
     expect_scored(out, 'queen versus king', None, score_min=400)
     expect_scored(out, 'fifty-move draw', None, score=0)
     expect_mate(out, 'mate before fifty-move claim at fullmove 1', 'a1a8', 1)
     expect_mate(out, 'mate before fifty-move claim', 'a1a8', 1)
-    expect_mate(out, 'already checkmated', '0000', 0)
+    expect_mate(out, 'already checkmated', '(none)', 0)
     expect_scored(out, 'king versus king', None, score=0)
     expect_scored(out, 'king and bishop versus king', None, score=0)
     expect_scored(out, 'twofold is not a draw', None, score_min=400)
@@ -418,8 +466,8 @@ def main():
     expect_mate(out, 'horizon rook mate', 'a1a8', 1)
     expect_scored(out, 'horizon promotion', None, score_max=-500)
     expect_scored(out, 'horizon stalemate', None, score=0)
-    expect_mate(out, 'root checkmate', '0000', 0)
-    expect_scored(out, 'root stalemate', '0000', score=0)
+    expect_mate(out, 'root checkmate', '(none)', 0)
+    expect_scored(out, 'root stalemate', '(none)', score=0)
 
     out.done()
 
