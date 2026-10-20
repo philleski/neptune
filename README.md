@@ -56,7 +56,7 @@ make test
 make test-perft
 ```
 
-`make test` checks that known positions still return the same move, and that a shallow move-generation count matches the published number. `make test-perft` runs the full [perft](https://www.chessprogramming.org/Perft) suite: it counts every leaf of the move tree and compares those totals to published numbers. This catches move-generation bugs and doubles as a benchmark. The tests are written in Python; set `NEPTUNE` to point them at a different binary.
+`make test` checks that known positions still return the same move, and that a shallow move-generation count matches the published number. `make test-perft` runs the full [perft](https://www.chessprogramming.org/Perft) suite: it counts every leaf of the move tree and compares those totals to published numbers. Both runs also count a position with a second rook on the a-file, which the published suite never reaches. This catches move-generation bugs and doubles as a benchmark. The tests are written in Python; set `NEPTUNE` to point them at a different binary.
 
 ## History
 
