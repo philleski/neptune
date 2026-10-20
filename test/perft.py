@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # Tests taken from https://chessprogramming.org/Perft_Results
 # --smoke runs a shallow initial-position check. The default is the full suite.
+# Both runs also count a position the published suite misses: a second rook
+# on the a-file, with the corner rook still home.
 
 import sys
 
@@ -60,9 +62,19 @@ SMOKE = [
     },
 ]
 
+# White rooks on a1 and a2. Moving the a2 rook must leave queenside rights.
+CORNER_ROOK = [
+    {
+        'name': 'Corner rook',
+        'fen': '4k3/8/8/8/8/8/R7/R3K3 w Q - 0 1',
+        'depth': 3,
+        'answer': 2545,
+    },
+]
+
 
 def main():
-    tests = SMOKE if '--smoke' in sys.argv else FULL
+    tests = (SMOKE if '--smoke' in sys.argv else FULL) + CORNER_ROOK
     commands = ['_perft %s %s' % (test['depth'], test['fen']) for test in tests]
     timeout = 60 if '--smoke' in sys.argv else 1800
     lines = run(commands, timeout=timeout)

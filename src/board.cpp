@@ -320,20 +320,21 @@ void Board::removeCastleRights() {
 }
 
 void Board::updateCastleRightsRookMove(Bitboard occSource) {
-	if(BB_FILE[FILE_A] & occSource) {
-		clearCastleRight((CastleRight) CASTLE_RIGHT(this->turn, QUEENSIDE));
-	} else if(BB_FILE[FILE_H] & occSource) {
-		clearCastleRight((CastleRight) CASTLE_RIGHT(this->turn, KINGSIDE));
+	// Only the unmoved corner rook holds the right. Another rook on the
+	// a-file or h-file can move without dropping it.
+	if(occSource & BB_SET[CASTLE_ROOK_START(turn, QUEENSIDE)]) {
+		clearCastleRight((CastleRight) CASTLE_RIGHT(turn, QUEENSIDE));
+	} else if(occSource & BB_SET[CASTLE_ROOK_START(turn, KINGSIDE)]) {
+		clearCastleRight((CastleRight) CASTLE_RIGHT(turn, KINGSIDE));
 	}
 }
 
 void Board::updateCastleRightsRookCapture(Bitboard occDest) {
-	// When capturing an opposing rook, remove the opponent's right to castle
-	// in that direction.
-	Color turnFlipped = FLIP(this->turn);
-	if(BB_FILE[FILE_A] & occDest) {
+	// Capturing the opponent's corner rook drops that side's right.
+	Color turnFlipped = FLIP(turn);
+	if(occDest & BB_SET[CASTLE_ROOK_START(turnFlipped, QUEENSIDE)]) {
 		clearCastleRight((CastleRight) CASTLE_RIGHT(turnFlipped, QUEENSIDE));
-	} else if(BB_FILE[FILE_H] & occDest) {
+	} else if(occDest & BB_SET[CASTLE_ROOK_START(turnFlipped, KINGSIDE)]) {
 		clearCastleRight((CastleRight) CASTLE_RIGHT(turnFlipped, KINGSIDE));
 	}
 }
