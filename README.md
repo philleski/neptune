@@ -62,10 +62,9 @@ make test-perft
 
 ```
 make elo
-make elo ELO=1800
 ```
 
-`make elo` plays 16 games against [Stockfish](https://stockfishchess.org/download/) capped at Elo 2200 and prints the gap. Elo is the standard chess rating; a score near even means the cap was about right, and `ELO` selects another one. [cutechess-cli](https://github.com/cutechess/cutechess) runs the match. On macOS, `brew install stockfish`. The first run downloads a set of opening positions. The time control and the other match settings are in `scripts/elo.sh`.
+`make elo` plays 16 games against [Stockfish](https://stockfishchess.org/download/) set to Elo 2200 and prints the gap. Elo is the standard chess rating; a score near even means the cap was about right, and `ELO` selects another one. [cutechess-cli](https://github.com/cutechess/cutechess) runs the match. On macOS, `brew install stockfish`. The first run downloads a set of opening positions. The time control and the other match settings are in `scripts/elo.sh`.
 
 ## History
 
