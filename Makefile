@@ -20,7 +20,7 @@ SRCS := \
 OBJS := $(addprefix $(BUILD)/,$(SRCS:.cpp=.o))
 DEPS := $(OBJS:.o=.d)
 
-.PHONY: all clean test test-perft debug
+.PHONY: all clean test test-perft debug elo
 
 all: $(BUILD)/neptune
 
@@ -42,6 +42,11 @@ test: $(BUILD)/neptune
 
 test-perft: $(BUILD)/neptune
 	python3 test/perft.py
+
+ELO ?= 2200
+
+elo: $(BUILD)/neptune
+	./scripts/elo.sh $(ELO)
 
 clean:
 	rm -rf build

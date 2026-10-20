@@ -58,6 +58,15 @@ make test-perft
 
 `make test` checks that known positions still return the same move, and that a shallow move-generation count matches the published number. `make test-perft` runs the full [perft](https://www.chessprogramming.org/Perft) suite: it counts every leaf of the move tree and compares those totals to published numbers. Both runs also count a position with a second rook on the a-file, which the published suite never reaches. This catches move-generation bugs and doubles as a benchmark. The tests are written in Python; set `NEPTUNE` to point them at a different binary.
 
+## Estimating strength
+
+```
+make elo
+make elo ELO=1800
+```
+
+`make elo` plays 16 games against [Stockfish](https://stockfishchess.org/download/) capped at Elo 2200 and prints the gap. Elo is the standard chess rating; a score near even means the cap was about right, and `ELO` selects another one. [cutechess-cli](https://github.com/cutechess/cutechess) runs the match. On macOS, `brew install stockfish`. The first run downloads a set of opening positions. The time control and the other match settings are in `scripts/elo.sh`.
+
 ## History
 
 Neptune is a C++ port of [Tactician](https://github.com/philleski/tactician), a chess engine I wrote in Java. I started the port by hand and finished most of it recently with AI-assisted development.
