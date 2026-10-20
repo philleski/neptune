@@ -30,6 +30,8 @@ public:
 
 	Brain();
 	void clear();
+	void setHashMegabytes(int megabytes);
+	int transpositionEntries() const;
 	SearchResult getMove(Board *board, SearchLimits limits, SearchStopFn stop, SearchInfoFn info);
 	float evaluate(Board *board);
 	float kingSafety(Board *board, Color color, float endgameFraction);

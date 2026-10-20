@@ -21,11 +21,12 @@ class TranspositionTable {
 public:
 	TranspositionTable();
 	void clear();
+	// Megabytes are 1024 * 1024 bytes. The same entry count leaves the table alone.
+	void resize(int megabytes);
+	int entries() const;
 	void put(U64 hash, int depth, int score, Move move, int type);
 	bool get(U64 hash, TranspositionEntry *entry) const;
 private:
-	static const int SIZE_BITS = 22;
-	static const int SIZE = 1 << SIZE_BITS;
 	std::vector<TranspositionEntry> data;
 };
 

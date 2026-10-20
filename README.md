@@ -38,7 +38,7 @@ A position is either the starting position (`position startpos`) or a [FEN](http
 
 `go` searches 8 plies by default. `go depth N` searches N plies. `go infinite` searches until `stop`. A clock (`wtime` and `btime`, with `winc`, `binc`, and `movestogo`) or `movetime` searches until the time for the move runs out. After each finished depth Neptune prints an `info` line: depth, a score in centipawns (or `mate N` when the line is a forced mate), the node count, the time in milliseconds, and the line it expects (the principal variation). Then it prints `bestmove`.
 
-Supported commands are `uci`, `isready`, `ucinewgame`, `position`, `go`, `stop`, and `quit`.
+Supported commands are `uci`, `isready`, `ucinewgame`, `setoption`, `position`, `go`, `stop`, and `quit`. `Hash` is the transposition table in megabytes (default 64), `Threads` is 1, and `EvalFile` remembers a weight-file path while the hand-written eval still scores the leaf.
 
 Debug commands, used by the tests:
 
@@ -47,6 +47,8 @@ Debug commands, used by the tests:
 - `_king <w|b> <fraction> <fen>` prints king safety for that side
 - `_eg <fen>` prints how close the position is to an endgame, from 0 to 1
 - `_hash` prints the position hash and the pawn-king hash
+- `_tt` prints how many entries the transposition table has
+- `_option <name>` prints the stored value of `Hash`, `Threads`, or `EvalFile`
 - `_roundtrip` checks that making a move and unmaking it restores the hash
 
 ## Test
